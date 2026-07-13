@@ -61,8 +61,11 @@ Commands:
             [--project P] [--developer D] [--date YYYY-MM-DD] [--sprint S]
             [--spec FILE] [--from FILE] [--out DIR] [--format pdf|md|html]
                        Generate a Development Checklist.
-  worklog   [--auto] [--blank] [--no-clobber] [--project P] [--developer D] [--date YYYY-MM-DD]
+  worklog   [--auto] [--checklist FILE] [--blank] [--no-clobber]
+            [--project P] [--developer D] [--date YYYY-MM-DD]
             [--sprint S] [--out DIR] [--format pdf|md|html]
+                       --checklist reconciles against an existing checklist
+                       (PDF / Markdown / JSON) — mark each planned task done.
                        Generate a Development Worklog for today.
   status                Show today's progress (completed / in-progress / pending).
   config    [get <key> | set <key> <value>]

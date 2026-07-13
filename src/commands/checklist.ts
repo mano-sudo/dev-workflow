@@ -351,6 +351,20 @@ async function exportChecklist(
   const stem = fileStem(checklist.developer || "developer", new Date());
   const written: string[] = [];
 
+  // Write a structured sidecar so a worklog can reconcile against this exact
+  // checklist later (paste the report path → tasks are recovered perfectly).
+  if (!blank) {
+    try {
+      fs.writeFileSync(
+        path.join(outDir, `${stem}.json`),
+        JSON.stringify(checklist, null, 2) + "\n",
+        "utf8"
+      );
+    } catch {
+      /* sidecar is best-effort */
+    }
+  }
+
   if (format === "pdf") {
     const out = prepareOutPath(path.join(outDir, `${stem}.pdf`), { noClobber });
     await renderChecklistPDF(checklist, out, { blank });

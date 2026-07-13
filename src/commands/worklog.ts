@@ -11,15 +11,19 @@ import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
 
+import * as os from "os";
 import {
   ActivityEntry,
+  ChecklistTask,
   DevWorkflowConfig,
   ExportFormat,
   ScheduleStatus,
   TimeAllocation,
   Worklog,
   WorklogChecklistItem,
+  WorklogTaskStatus,
 } from "../types";
+import { loadChecklistFromFile } from "../services/checklistLoader";
 import {
   loadConfig,
   resolveReportDir,
@@ -210,6 +214,66 @@ async function collectList(
   return out;
 }
 
+function expandHome(p: string): string {
+  const s = p.trim().replace(/^['"]|['"]$/g, "");
+  if (s === "~") return os.homedir();
+  if (s.startsWith("~/") || s.startsWith("~\\")) return path.join(os.homedir(), s.slice(2));
+  return s;
+}
+
+/** Text corpus of what we know got done, for auto-guessing task completion. */
+function signalText(auto: Partial<Worklog>): string {
+  const parts: string[] = [];
+  for (const c of auto.checklistItems ?? []) parts.push(c.task, c.result ?? "");
+  for (const a of auto.additional ?? []) parts.push(a);
+  return parts.join(" \n ").toLowerCase();
+}
+
+/** Guess a planned task's completion by word overlap with the signal text. */
+function autoStatusFor(task: string, signal: string): WorklogTaskStatus {
+  const words = task.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
+  if (words.length === 0) return "Not Done";
+  const hits = words.filter((w) => signal.includes(w)).length;
+  return hits >= Math.max(1, Math.ceil(words.length * 0.4)) ? "Completed" : "Not Done";
+}
+
+/** Non-interactive reconciliation: auto-mark each planned task. */
+function reconcileAuto(tasks: ChecklistTask[], signal: string): WorklogChecklistItem[] {
+  return tasks.map((t) => ({ task: t.task, status: autoStatusFor(t.task, signal) }));
+}
+
+/** Interactive reconciliation: mark each planned task Completed/Partial/Not Done. */
+async function reconcileInteractive(
+  rl: readline.Interface,
+  tasks: ChecklistTask[],
+  signal: string
+): Promise<WorklogChecklistItem[]> {
+  process.stdout.write(
+    `\nReconcile ${tasks.length} planned task(s) from the checklist ` +
+      `— c=Completed, p=Partial, n=Not Done (a guess is pre-filled):\n`
+  );
+  const items: WorklogChecklistItem[] = [];
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    const guess = autoStatusFor(t.task, signal);
+    const gk = guess === "Completed" ? "c" : "n";
+    process.stdout.write(`\n  ${i + 1}/${tasks.length}. ${t.task}\n`);
+    const ans = (
+      await ask(rl, `     status [c/p/n] (default ${gk}): `)
+    ).trim().toLowerCase();
+    const status: WorklogTaskStatus = ans.startsWith("c")
+      ? "Completed"
+      : ans.startsWith("p")
+      ? "Partial"
+      : ans.startsWith("n")
+      ? "Not Done"
+      : guess;
+    const result = (await ask(rl, "     result / detail (optional): ")).trim();
+    items.push({ task: t.task, status, result: result || undefined });
+  }
+  return items;
+}
+
 /** Type completed tasks one at a time (task text + optional result). */
 async function collectChecklistItems(
   rl: readline.Interface,
@@ -237,14 +301,17 @@ async function enrichWorklogInteractive(
   auto: Partial<Worklog>
 ): Promise<Partial<Worklog>> {
   const autoCompleted = auto.checklistItems ?? [];
+  const doneCount = autoCompleted.filter((c) => c.status === "Completed").length;
   process.stdout.write(
-    `\nAuto-detected ${autoCompleted.length} completed task(s) from your tracked activity + git:\n`
+    `\nChecklist so far — ${autoCompleted.length} task(s), ${doneCount} completed:\n`
   );
   if (autoCompleted.length === 0) {
-    process.stdout.write("  (nothing tracked yet — add them below)\n");
+    process.stdout.write("  (nothing yet — add tasks below)\n");
   } else {
     autoCompleted.forEach((c, i) =>
-      process.stdout.write(`  ${i + 1}. ${c.task}${c.result ? ` — ${c.result}` : ""}\n`)
+      process.stdout.write(
+        `  ${i + 1}. [${c.status}] ${c.task}${c.result ? ` — ${c.result}` : ""}\n`
+      )
     );
   }
 
@@ -409,19 +476,60 @@ export async function run(args: string[]): Promise<void> {
   // activity + git commits). This is the baseline the worklog is built on.
   let content = await buildFromSession(cwd);
 
-  // In a terminal, let the developer review and add to the auto-detected work,
-  // unless --auto / --yes was passed to accept the generated worklog as-is.
   const autoOnly = bools.has("auto") || bools.has("yes");
-  if (!autoOnly && hasTTY()) {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    try {
-      content = await enrichWorklogInteractive(rl, content);
-    } finally {
-      rl.close();
+  const interactive = !autoOnly && hasTTY();
+  let checklistPath =
+    flags.checklist || flags["from-checklist"] || flags.reconcile || flags.against;
+
+  const rl = interactive
+    ? readline.createInterface({ input: process.stdin, output: process.stdout })
+    : undefined;
+  try {
+    // If no checklist was passed, offer to paste one in an interactive session.
+    if (!checklistPath && rl) {
+      const ans = (
+        await ask(
+          rl,
+          "\nReconcile against an existing checklist? Paste its file path (PDF/MD/JSON), or Enter to skip: "
+        )
+      ).trim();
+      if (ans) checklistPath = ans;
     }
+
+    // Reconcile the worklog's CHECKLIST COMPLETION table against that checklist.
+    if (checklistPath) {
+      try {
+        const loaded = await loadChecklistFromFile(expandHome(checklistPath));
+        if (loaded.tasks.length > 0) {
+          const signal = signalText(content);
+          const planned = new Set(loaded.tasks.map((t) => t.task.toLowerCase()));
+          // Tracked-completed work that isn't a planned task becomes "additional".
+          const extra = (content.checklistItems ?? [])
+            .filter((c) => !planned.has(c.task.toLowerCase()))
+            .map((c) => (c.result ? `${c.task} — ${c.result}` : c.task));
+          content.checklistItems = rl
+            ? await reconcileInteractive(rl, loaded.tasks, signal)
+            : reconcileAuto(loaded.tasks, signal);
+          content.additional = [...(content.additional ?? []), ...extra];
+          content.checklistRef = loaded.stem;
+          const done = content.checklistItems.filter((c) => c.status === "Completed").length;
+          console.log(
+            `✓ Reconciled against ${loaded.stem}: ${done}/${loaded.tasks.length} completed.`
+          );
+        } else {
+          console.warn(
+            "⚠ Couldn't read tasks from that checklist — continuing without reconciliation."
+          );
+        }
+      } catch (err) {
+        console.warn(`⚠ ${(err as Error).message}`);
+      }
+    }
+
+    // Let the developer review and add to the auto-detected work.
+    if (rl) content = await enrichWorklogInteractive(rl, content);
+  } finally {
+    if (rl) rl.close();
   }
 
   const worklog: Worklog = { ...base, ...content };

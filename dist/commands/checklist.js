@@ -340,6 +340,16 @@ async function collectList(rl, label) {
 async function exportChecklist(checklist, outDir, format, cfg, blank, noClobber = false) {
     const stem = fileStem(checklist.developer || "developer", new Date());
     const written = [];
+    // Write a structured sidecar so a worklog can reconcile against this exact
+    // checklist later (paste the report path → tasks are recovered perfectly).
+    if (!blank) {
+        try {
+            fs.writeFileSync(path.join(outDir, `${stem}.json`), JSON.stringify(checklist, null, 2) + "\n", "utf8");
+        }
+        catch {
+            /* sidecar is best-effort */
+        }
+    }
     if (format === "pdf") {
         const out = (0, config_1.prepareOutPath)(path.join(outDir, `${stem}.pdf`), { noClobber });
         await (0, pdfExporter_1.renderChecklistPDF)(checklist, out, { blank });
