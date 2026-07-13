@@ -5,8 +5,8 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Build output
-dist/
+# Build output — dist/ IS committed so `git clone` gives a ready-to-run
+# extension without needing TypeScript. Rebuild with `npm run build`.
 *.tsbuildinfo
 
 # Generated reports

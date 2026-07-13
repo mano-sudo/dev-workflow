@@ -60,6 +60,11 @@ At runtime, config and live storage are kept under your home directory, not in t
 
 **Prerequisites:** Node.js **>= 18** and Claude Code installed.
 
+The repo ships a **prebuilt `dist/`**, so no TypeScript/build step is ever
+required to use it. The code just needs to land on the machine once (that's what
+`git clone` / `npm install -g` does) — the extension is a local CLI + command
+files, not a hosted service.
+
 ### Primary — install straight from GitHub (two commands)
 
 ```bash
@@ -67,23 +72,21 @@ npm install -g git+https://github.com/mano-sudo/dev-workflow.git
 dev-workflow install
 ```
 
-The first command downloads the package and **auto-builds it** (via the `prepare`
-script) — no manual clone or `npm run build` needed. The second registers the
-slash commands with Claude Code, seeds `~/.claude/dev-workflow/`, and runs the
-first-run prompts. Then **restart Claude Code** so the commands load.
+The first command downloads the package and its one runtime dependency
+(`pdfkit`); the second registers the slash commands with Claude Code, seeds
+`~/.claude/dev-workflow/`, and runs the first-run prompts. Then **restart Claude
+Code** so the commands load.
 
-> The extension is a local CLI + command files, so the code does have to land on
-> the machine once (that's what `npm install -g` does) — but you never clone or
-> build by hand.
-
-### Alternative — from a clone
+### Alternative — from a clone (one setup command)
 
 ```bash
 git clone https://github.com/mano-sudo/dev-workflow.git
 cd dev-workflow
-npm install          # runs the build automatically (prepare script)
-node bin/cli.js install
+npm run setup     # installs dependencies, then runs the extension installer
 ```
+
+`npm run setup` = `npm install` (pulls `pdfkit`) **+** `node bin/cli.js install`
+in one go. Because `dist/` is committed, there is nothing to compile.
 
 ### Once published to npm
 

@@ -33,8 +33,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepare": "npm run build",
-    "prepublishOnly": "npm run build",
+    "prepack": "npm run build",
+    "postinstall": "node bin/ensure-build.js",
+    "setup": "npm install && node bin/cli.js install",
     "install-extension": "node bin/cli.js install",
     "dev": "tsc -p tsconfig.json --watch",
     "start": "node bin/cli.js"
