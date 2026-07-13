@@ -34,7 +34,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
-    "postinstall": "node bin/ensure-build.js",
     "setup": "npm install && node bin/cli.js install",
     "install-extension": "node bin/cli.js install",
     "dev": "tsc -p tsconfig.json --watch",
