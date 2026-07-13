@@ -61,8 +61,12 @@ node bin/cli.js install
    - `storage/completed.json` (seeded as `[]`)
 3. **Registers** the slash commands (`/checklist`, `/worklog`, `/status`,
    `/history`, `/config`) with Claude Code by copying the command definitions.
-4. **Runs the first-run prompt** asking whether to enable background tracking,
-   and saves your answer to `config.json`.
+4. **Runs the first-run prompts** — asks whether to enable background tracking,
+   and which folders to save Development Checklists and Development Worklogs in
+   (defaults: `~/Documents/checklist` and `~/Documents/accomplishment`). Saves
+   your answers to `config.json` (`checklistDir` / `worklogDir`). Change them
+   later with `dev-workflow config`. For unattended installs pass
+   `--yes --checklist-dir <dir> --worklog-dir <dir>`.
 
 It does **not** send anything off your machine.
 

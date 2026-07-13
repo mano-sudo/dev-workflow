@@ -103,19 +103,20 @@ See [INSTALL.md](./INSTALL.md) for verification, re-configuration and uninstall 
 
 ## First run — installer prompts
 
-The installer asks two things:
+The installer asks a few short questions:
 
 ```
 Enable Background Tracking? (Recommended)  Yes / No
-Where should reports be saved? [~/Documents]
-Use separate folders for checklists and worklogs?  Yes / No
+Where should your reports be saved?
+  Folder for Development Checklists [~/Documents/checklist]:
+  Folder for Development Worklogs   [~/Documents/accomplishment]:
 ```
 
 - **Background tracking** records git commits, file edits, and commands you run
   (locally, into `~/.claude/dev-workflow/storage`) so your worklog writes itself.
-- **Output location** sets where PDFs land. Answering "separate folders" lets you
-  send checklists and worklogs to different directories (e.g.
-  `~/Documents/checklist` and `~/Documents/accomplishment`).
+- **Output location** — you choose the checklist folder and the worklog folder
+  directly (press Enter to accept the defaults), so each report type lands where
+  you want it. `~` is expanded to your home directory.
 
 Answers are saved to `config.json`. Change them anytime:
 

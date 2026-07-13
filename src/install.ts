@@ -18,6 +18,7 @@ import {
   storageDir,
   ensureDirs,
   saveConfig,
+  loadConfig,
   defaultOutputDir,
 } from "./config";
 
@@ -160,6 +161,10 @@ export async function run(argv: string[] = []): Promise<void> {
   const flags = parseFlags(argv);
   const root = packageRoot();
 
+  // Existing config (if re-installing) provides the defaults, so a re-run never
+  // clobbers paths/settings the user already chose.
+  const existing = fs.existsSync(configPath()) ? loadConfig() : undefined;
+
   console.log(c.bold("\ndev-workflow installer\n"));
 
   // 1. Config + storage folders.
@@ -220,66 +225,69 @@ export async function run(argv: string[] = []): Promise<void> {
     );
   }
 
-  // 4. Background tracking decision.
-  let backgroundTracking = true;
+  // 4. Background tracking decision (defaults to the existing setting on re-run).
+  const trackingDefault = existing?.backgroundTracking ?? true;
+  let backgroundTracking = trackingDefault;
   if (flags.noTracking) {
     backgroundTracking = false;
     console.log(c.dim("  Background tracking disabled via --no-tracking."));
   } else if (flags.yes || !process.stdin.isTTY) {
-    backgroundTracking = true;
+    backgroundTracking = trackingDefault;
     console.log(
-      c.dim("  Background tracking enabled (non-interactive default).")
+      c.dim(`  Background tracking ${backgroundTracking ? "enabled" : "disabled"} (non-interactive).`)
     );
   } else {
     backgroundTracking = await promptYesNo(
       "Enable Background Tracking? (Recommended)",
-      true
+      trackingDefault
     );
   }
 
-  // 4b. Where should generated reports be saved?
-  const def = defaultOutputDir();
-  let outputDir: string | undefined;
-  let checklistDir: string | undefined;
-  let worklogDir: string | undefined;
+  // 4b. Where should each report type be saved? Ask for the checklist folder
+  //     and the worklog folder directly so they are always set explicitly.
+  const base = flags.outputDir
+    ? expandHome(flags.outputDir)
+    : existing?.outputDir || defaultOutputDir();
+  const defChecklist =
+    (flags.checklistDir && expandHome(flags.checklistDir)) ||
+    existing?.checklistDir ||
+    path.join(base, "checklist");
+  const defWorklog =
+    (flags.worklogDir && expandHome(flags.worklogDir)) ||
+    existing?.worklogDir ||
+    path.join(base, "accomplishment");
 
-  if (flags.outputDir || flags.checklistDir || flags.worklogDir) {
-    // Non-interactive: honor whatever paths were passed.
-    outputDir = flags.outputDir ? expandHome(flags.outputDir) : def;
-    checklistDir = flags.checklistDir ? expandHome(flags.checklistDir) : undefined;
-    worklogDir = flags.worklogDir ? expandHome(flags.worklogDir) : undefined;
-  } else if (flags.yes || !process.stdin.isTTY) {
-    outputDir = def;
-    console.log(c.dim(`  Reports will be saved to ${def} (default).`));
+  let checklistDir: string;
+  let worklogDir: string;
+
+  if (flags.yes || !process.stdin.isTTY) {
+    // Non-interactive: flags win, else existing config, else sensible defaults.
+    checklistDir = defChecklist;
+    worklogDir = defWorklog;
+    console.log(
+      c.dim(`  Checklists → ${checklistDir}\n  Worklogs   → ${worklogDir}`)
+    );
   } else {
-    outputDir = await promptText("Where should reports be saved?", def);
-    const separate = await promptYesNo(
-      "Use separate folders for checklists and worklogs?",
-      false
+    console.log("\nWhere should your reports be saved?");
+    checklistDir = await promptText(
+      "  Folder for Development Checklists",
+      defChecklist
     );
-    if (separate) {
-      checklistDir = await promptText(
-        "  Checklist folder",
-        path.join(outputDir, "checklist")
-      );
-      worklogDir = await promptText(
-        "  Worklog folder",
-        path.join(outputDir, "worklog")
-      );
-    }
+    worklogDir = await promptText("  Folder for Development Worklogs", defWorklog);
   }
+  const outputDir = base;
 
-  // Create whatever directories were chosen so the first report never fails.
+  // Create the chosen directories so the first report never fails to write.
   for (const dir of [outputDir, checklistDir, worklogDir]) {
-    if (dir) {
-      try {
-        fs.mkdirSync(dir, { recursive: true });
-      } catch {
-        /* best-effort */
-      }
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {
+      /* best-effort */
     }
   }
-  console.log(`${CHECK} Report output: ${c.dim(checklistDir || worklogDir ? `${outputDir} (checklist: ${checklistDir || outputDir}, worklog: ${worklogDir || outputDir})` : outputDir || def)}`);
+  console.log(
+    `${CHECK} Report output:\n    ${c.dim(`checklists → ${checklistDir}`)}\n    ${c.dim(`worklogs   → ${worklogDir}`)}`
+  );
 
   // 5. Write config.
   const cfg: DevWorkflowConfig = {
@@ -287,9 +295,9 @@ export async function run(argv: string[] = []): Promise<void> {
     autoSave: true,
     template: "default",
     export: "pdf",
-    ...(outputDir ? { outputDir } : {}),
-    ...(checklistDir ? { checklistDir } : {}),
-    ...(worklogDir ? { worklogDir } : {}),
+    outputDir,
+    checklistDir,
+    worklogDir,
   };
   saveConfig(cfg);
   console.log(`${CHECK} Wrote config: ${c.dim(configPath())}`);
