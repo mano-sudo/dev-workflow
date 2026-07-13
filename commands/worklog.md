@@ -9,38 +9,36 @@ report of work actually completed. Follow the authoring guidance in
 git history, background tracking, or explicit developer input. When confidence is
 low, ask for clarification.
 
-## Step 1 — Choose a source
+## Step 1 — Auto-generate from what was completed
 
 Arguments passed: `$ARGUMENTS`
 
-Ask the developer (or infer from arguments) how to build the worklog:
+When the developer runs `/worklog`, the worklog **generates itself first** from
+what was actually done today:
 
-1. **Against a checklist** — reconcile today's work against an existing checklist
-   (e.g. `CASERES_CHECKLIST_07-11-2026`); mark each planned task Completed / Partial
-   / Not Done with a result.
-2. **From git + tracking** — summarize commits, diffs, and tracked activity from
-   `~/.claude/dev-workflow/storage/session.json` into completed work.
-3. **From a description** — the developer narrates the day and you structure it.
-4. **Blank template** — a printable empty worklog form for filling in by hand.
+- **tracked activity** in `~/.claude/dev-workflow/storage/session.json`
+  (features, bug fixes, refactors → Completed checklist rows; other events →
+  additional work), and
+- **git** — recent commits and pending changes.
 
-## Step 2 — Gather details
+**Never invent completed work** — only report what the tracking/git/checklist or
+the developer actually confirm.
 
-Confirm: project, developer, date (default today), sprint/version, optional
-checklist reference. Collect checklist completion rows, additional tasks completed,
-tasks not completed, blockers, next priorities, rough time allocation (planning,
-development, testing, bug fixes, meetings, total hours), and overall status
-(On Schedule / Slight Delay / Delayed) with notes.
+## Step 2 — Review and add (interactive)
+
+After the automatic draft, let the developer review the auto-detected completed
+tasks and **add to them, typed one at a time**: any extra completed tasks (with an
+optional result), additional work, tasks NOT completed, blockers, next priorities,
+notes, total hours, and overall status (On Schedule / Slight Delay / Delayed).
+The auto-detected items are the starting point — the developer only adds what is
+missing. Pass `--auto` to accept the generated worklog with no questions.
 
 ## Step 3 — Generate
 
 ```
-npx dev-workflow worklog $ARGUMENTS
-```
-
-For a blank form:
-
-```
-npx dev-workflow worklog --blank
+npx dev-workflow worklog $ARGUMENTS      # auto-draft, then review/add in a terminal
+npx dev-workflow worklog --auto          # accept the auto-generated worklog as-is
+npx dev-workflow worklog --blank         # printable empty form
 ```
 
 Fallback if `npx` is unavailable: `node bin/cli.js worklog`.

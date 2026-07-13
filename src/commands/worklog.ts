@@ -1,9 +1,11 @@
 /**
  * /worklog — generate a Development Worklog for the day.
  *
- * If background tracking is enabled, the worklog is assembled from the tracked
- * session (today's activities) + git. Otherwise the operator is prompted to
- * describe accomplishments. Exports as PDF / Markdown / HTML per config + flags.
+ * The worklog auto-generates from what was actually completed today (tracked
+ * session activity + git commits). In a terminal the developer can review and
+ * add to that baseline (extra accomplishments, blockers, next priorities,
+ * hours, status); pass --auto to accept the generated worklog as-is.
+ * Exports as PDF / Markdown / HTML per config + flags.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -208,25 +210,69 @@ async function collectList(
   return out;
 }
 
-async function promptWorklog(
-  rl: readline.Interface
+/** Type completed tasks one at a time (task text + optional result). */
+async function collectChecklistItems(
+  rl: readline.Interface,
+  label: string
+): Promise<WorklogChecklistItem[]> {
+  const out: WorklogChecklistItem[] = [];
+  process.stdout.write(`\n${label} — type one at a time, blank to finish.\n`);
+  for (;;) {
+    const task = (await ask(rl, `\n  Completed task ${out.length + 1}: `)).trim();
+    if (!task) break;
+    const result = (await ask(rl, "    Result / detail (optional): ")).trim();
+    out.push({ task, status: "Completed", result: result || undefined });
+    process.stdout.write(`    ✓ ${task}\n`);
+  }
+  return out;
+}
+
+/**
+ * Interactive worklog builder that STARTS from what was auto-detected
+ * (tracked completed tasks + git) and lets the developer add to it, rather
+ * than typing everything from scratch.
+ */
+async function enrichWorklogInteractive(
+  rl: readline.Interface,
+  auto: Partial<Worklog>
 ): Promise<Partial<Worklog>> {
-  process.stdout.write("\nDescribe today's accomplishments.\n");
-  const completed = await collectList(rl, "Completed tasks");
-  const additional = await collectList(rl, "Additional tasks completed");
-  const notCompleted = await collectList(rl, "Tasks not completed");
+  const autoCompleted = auto.checklistItems ?? [];
+  process.stdout.write(
+    `\nAuto-detected ${autoCompleted.length} completed task(s) from your tracked activity + git:\n`
+  );
+  if (autoCompleted.length === 0) {
+    process.stdout.write("  (nothing tracked yet — add them below)\n");
+  } else {
+    autoCompleted.forEach((c, i) =>
+      process.stdout.write(`  ${i + 1}. ${c.task}${c.result ? ` — ${c.result}` : ""}\n`)
+    );
+  }
+
+  const extraCompleted = await collectChecklistItems(
+    rl,
+    "Add any completed tasks that weren't tracked"
+  );
+  const checklistItems = [...autoCompleted, ...extraCompleted];
+
+  const additional = [
+    ...(auto.additional ?? []),
+    ...(await collectList(rl, "Additional work done (beyond the plan)")),
+  ];
+  const notCompleted = await collectList(rl, "Tasks NOT completed");
   const blockers = await collectList(rl, "Blockers");
-  const next = await collectList(rl, "Next priorities");
+  const next = [
+    ...(auto.next ?? []),
+    ...(await collectList(rl, "Next priorities")),
+  ];
   const notes = await collectList(rl, "Notes");
 
-  const checklistItems: WorklogChecklistItem[] = completed.map((task) => ({
-    task,
-    status: "Completed" as const,
-  }));
-
-  const hoursRaw = (await ask(rl, "\nTotal hours worked (e.g. 6.5): ")).trim();
-  const total = Number(hoursRaw);
-  const time: TimeAllocation = Number.isFinite(total) && total > 0 ? { total } : {};
+  const autoHours = auto.time?.total;
+  const hoursRaw = (
+    await ask(rl, `\nTotal hours worked [${autoHours ? String(autoHours) : "e.g. 6.5"}]: `)
+  ).trim();
+  const total = hoursRaw ? Number(hoursRaw) : autoHours;
+  const time: TimeAllocation =
+    total && Number.isFinite(total) ? { ...auto.time, total } : auto.time ?? {};
 
   const statusRaw = (await ask(
     rl,
@@ -244,6 +290,7 @@ async function promptWorklog(
     notes,
     time,
     status,
+    summary: auto.summary,
   };
 }
 
@@ -358,22 +405,23 @@ export async function run(args: string[]): Promise<void> {
     return;
   }
 
-  let content: Partial<Worklog>;
-  if (cfg.backgroundTracking) {
-    content = await buildFromSession(cwd);
-  } else if (hasTTY()) {
+  // Always auto-generate from what was actually completed today (tracked
+  // activity + git commits). This is the baseline the worklog is built on.
+  let content = await buildFromSession(cwd);
+
+  // In a terminal, let the developer review and add to the auto-detected work,
+  // unless --auto / --yes was passed to accept the generated worklog as-is.
+  const autoOnly = bools.has("auto") || bools.has("yes");
+  if (!autoOnly && hasTTY()) {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
     try {
-      content = await promptWorklog(rl);
+      content = await enrichWorklogInteractive(rl, content);
     } finally {
       rl.close();
     }
-  } else {
-    // Non-interactive with tracking off: fall back to whatever the session has.
-    content = await buildFromSession(cwd);
   }
 
   const worklog: Worklog = { ...base, ...content };
