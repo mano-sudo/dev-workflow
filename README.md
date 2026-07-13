@@ -65,19 +65,7 @@ required to use it. The code just needs to land on the machine once (that's what
 `git clone` / `npm install -g` does) — the extension is a local CLI + command
 files, not a hosted service.
 
-### Primary — install straight from GitHub (two commands)
-
-```bash
-npm install -g git+https://github.com/mano-sudo/dev-workflow.git
-dev-workflow install
-```
-
-The first command downloads the package and its one runtime dependency
-(`pdfkit`); the second registers the slash commands with Claude Code, seeds
-`~/.claude/dev-workflow/`, and runs the first-run prompts. Then **restart Claude
-Code** so the commands load.
-
-### Alternative — from a clone (one setup command)
+### Recommended — clone, then one setup command
 
 ```bash
 git clone https://github.com/mano-sudo/dev-workflow.git
@@ -85,8 +73,22 @@ cd dev-workflow
 npm run setup     # installs dependencies, then runs the extension installer
 ```
 
-`npm run setup` = `npm install` (pulls `pdfkit`) **+** `node bin/cli.js install`
-in one go. Because `dist/` is committed, there is nothing to compile.
+`npm run setup` = `npm install` (pulls the one runtime dep, `pdfkit`) **+**
+`node bin/cli.js install` in a single command. Because `dist/` is committed,
+there is nothing to compile. The installer registers the slash commands with
+Claude Code, seeds `~/.claude/dev-workflow/`, and runs the first-run prompts.
+Then **restart Claude Code** so the commands load.
+
+### Alternative — install straight from GitHub
+
+```bash
+npm install -g git+https://github.com/mano-sudo/dev-workflow.git
+dev-workflow install
+```
+
+Downloads and links the CLI globally, then registers the commands. (If your npm
+environment has trouble installing directly from a git URL, use the clone method
+above — it is the most reliable.)
 
 ### Once published to npm
 
