@@ -1,0 +1,24 @@
+{
+  "name": "dev-workflow",
+  "version": "1.0.0",
+  "description": "Generate professional Development Checklists, Worklogs, progress tracking, and daily engineering reports — with optional background tracking and multi-format export (PDF/Markdown/DOCX/HTML).",
+  "author": {
+    "name": "Roman Caseres"
+  },
+  "homepage": "https://github.com/romancaseres/dev-workflow",
+  "keywords": [
+    "worklog",
+    "checklist",
+    "developer-tools",
+    "pdf",
+    "engineering-report",
+    "productivity"
+  ],
+  "commands": [
+    "./commands/checklist.md",
+    "./commands/worklog.md",
+    "./commands/status.md",
+    "./commands/config.md",
+    "./commands/history.md"
+  ]
+}

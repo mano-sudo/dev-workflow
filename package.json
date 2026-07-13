@@ -1,0 +1,52 @@
+{
+  "name": "dev-workflow",
+  "version": "1.0.0",
+  "description": "Claude Code extension that generates professional Development Checklists, Worklogs, progress tracking and daily engineering reports — with optional background tracking and multi-format export (PDF/Markdown/DOCX/HTML).",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "extension",
+    "plugin",
+    "developer-tools",
+    "worklog",
+    "checklist",
+    "pdf",
+    "engineering-report"
+  ],
+  "license": "MIT",
+  "author": "Roman Caseres",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "bin": {
+    "dev-workflow": "bin/cli.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "commands",
+    "templates",
+    "prompts",
+    ".claude-plugin",
+    "README.md",
+    "INSTALL.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "install-extension": "node bin/cli.js install",
+    "dev": "tsc -p tsconfig.json --watch",
+    "start": "node bin/cli.js"
+  },
+  "dependencies": {
+    "pdfkit": "^0.19.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pdfkit": "^0.13.4",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
