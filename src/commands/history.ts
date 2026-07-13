@@ -17,7 +17,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
-import { loadConfig, resolveOutputDir, storageDir } from "../config";
+import { loadConfig, resolveReportDir, resolveOutputDir, storageDir } from "../config";
 
 interface CompletedRecord {
   kind?: string;
@@ -178,34 +178,70 @@ function filterLabel(f: Filter): string {
   }
 }
 
+const dim = (s: string): string => `\x1b[90m${s}\x1b[0m`;
+const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`;
+
+function humanSize(file: string): string {
+  try {
+    const kb = fs.statSync(file).size / 1024;
+    return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(kb))} KB`;
+  } catch {
+    return "";
+  }
+}
+
 export async function run(args: string[]): Promise<void> {
   const cfg = loadConfig();
   const filter = parseFilter(args);
-  const outDir = resolveOutputDir(cfg);
+
+  // Scan the base output dir AND the per-type folders (they may differ).
+  const dirs = Array.from(
+    new Set([
+      resolveOutputDir(cfg),
+      resolveReportDir(cfg, "checklist"),
+      resolveReportDir(cfg, "worklog"),
+    ])
+  );
 
   const recorded = loadCompletedRecords();
   const known = new Set(recorded.map((r) => r.file));
-  const scanned = scanOutputDir(outDir, known);
+  const scanned: ReportRow[] = [];
+  for (const d of dirs) scanned.push(...scanOutputDir(d, known));
 
-  const all = [...recorded, ...scanned]
+  // De-duplicate by file path (a record and a scan may both find it).
+  const byFile = new Map<string, ReportRow>();
+  for (const r of [...recorded, ...scanned]) {
+    if (!byFile.has(r.file)) byFile.set(r.file, r);
+  }
+
+  const all = [...byFile.values()]
     .filter((r) => matches(r, filter))
     .sort((a, b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date));
 
-  console.log(`\x1b[1mGenerated reports — ${filterLabel(filter)}\x1b[0m`);
-  console.log(`\x1b[90mOutput dir: ${outDir}\x1b[0m\n`);
+  console.log(bold(`Generated reports — ${filterLabel(filter)}`));
+  console.log(dim(`Scanned: ${dirs.join(", ")}`));
 
   if (all.length === 0) {
-    console.log("  (no reports found for this range)");
+    console.log("\n  (no reports found for this range)");
     return;
   }
 
+  // Group by date with a header per day.
+  let lastDate = "";
   for (const r of all) {
+    if (r.date !== lastDate) {
+      console.log(`\n${bold(r.date)}`);
+      lastDate = r.date;
+    }
     const exists = fs.existsSync(r.file);
-    const flag = exists ? "" : " \x1b[90m(missing)\x1b[0m";
+    const tag = r.kind === "worklog" ? "worklog  " : r.kind === "checklist" ? "checklist" : "report   ";
+    const size = exists ? humanSize(r.file) : "missing";
     const proj = r.project ? ` — ${r.project}` : "";
-    console.log(
-      `  ${r.date}  [${r.kind.padEnd(9)}]${proj}\n    ${r.file}${flag}`
-    );
+    console.log(`  ${tag}  ${path.basename(r.file)}  ${dim(`(${size})`)}${proj}`);
+    console.log(dim(`             ${r.file}${exists ? "" : "  ← file no longer exists"}`));
   }
-  console.log(`\n${all.length} report(s).`);
+
+  const checklists = all.filter((r) => r.kind === "checklist").length;
+  const worklogs = all.filter((r) => r.kind === "worklog").length;
+  console.log(`\n${all.length} report(s) — ${checklists} checklist(s), ${worklogs} worklog(s).`);
 }
