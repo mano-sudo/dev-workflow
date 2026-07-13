@@ -7,37 +7,42 @@ project. Follow the authoring guidance in `~/.claude/dev-workflow/prompts/checkl
 (also shipped at `prompts/checklist.md` in the package). Never invent completed
 work; a checklist describes *planned* work only.
 
-## Step 1 — Choose a creation mode
+## Step 1 — Choose one or MORE sources
 
 Arguments passed: `$ARGUMENTS`
 
-If the arguments already indicate a mode or content, use them. Otherwise ask the
-developer to pick one of the **5 creation modes**:
+The checklist can be built from **several sources at once** — they combine into a
+single list (duplicates removed). Ask the developer to pick any combination:
 
-1. **From repository scan** — analyze the current repo (structure, TODOs, failing
-   builds/tests, missing pieces) and propose planned tasks.
-2. **From git context** — derive planned work from the current branch, uncommitted
-   changes, and recent commits.
-3. **From background tracking** — use today's tracked activity in
-   `~/.claude/dev-workflow/storage/session.json` to suggest what still needs doing.
-4. **From a description** — the developer describes the sprint/goal in prose and you
-   structure it into tasks, goals, and deliverables.
-5. **Blank template** — a printable empty checklist form (identical design, no
-   content) for filling in by hand.
+1. **Manual entry** — the developer types tasks one at a time (see Step 2).
+2. **Scan repository** — analyze the repo (structure, TODOs/FIXMEs, missing tests,
+   dead code, risks) and propose planned tasks.
+3. **From a spec / markdown file** — compare a spec against the code (`--spec <file>`).
+4. **From a previous report** — carry over unfinished items (`--from <file>`).
+5. **AI-assisted** — synthesize from git context + today's tracked activity.
 
-## Step 2 — Gather details
+Multiple selections combine, e.g. `2,1` = scan the repo **and** let the developer
+add their own typed tasks on top.
 
-Confirm or ask for: project name, developer name, date (default today), and
-sprint/version. Collect the planned tasks (each with a priority: High/Medium/Low),
-the goals (outcomes, not tasks), and the expected deliverables. If confidence in
-any inferred item is low, ask a clarifying question rather than guessing.
+## Step 2 — Type tasks checklist-style (for Manual entry)
+
+When Manual entry is chosen, collect tasks **one at a time, like a real checklist**:
+ask for the first task's text, then its priority (High/Medium/Low, default Medium),
+then optional notes — then immediately move on to the next task. Keep going until
+the developer signals they are done (an empty task). Then collect the goals
+(outcomes, not tasks) and expected deliverables the same way.
+
+Also confirm or ask for: project name, developer name, date (default today), and
+sprint/version. If confidence in any inferred item is low, ask rather than guess.
 
 ## Step 3 — Generate
 
-Run the CLI to produce the document. Pass the chosen mode and any collected data:
+Run the CLI. In a terminal it walks the developer through the multi-select and the
+task-by-task entry interactively; you can also pass everything as flags. Combine
+sources with a comma:
 
 ```
-npx dev-workflow checklist $ARGUMENTS
+npx dev-workflow checklist --mode=scan,manual $ARGUMENTS
 ```
 
 For a blank form:

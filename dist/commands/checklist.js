@@ -256,47 +256,72 @@ async function buildFromAI(cwd) {
     }
     return tasks;
 }
-async function promptMode(rl) {
-    process.stdout.write("\nHow would you like to build the checklist?\n" +
-        "  1. Manual entry\n" +
+const MODE_TOKENS = {
+    "1": "manual",
+    "2": "scan",
+    "3": "spec",
+    "4": "previous",
+    "5": "ai",
+    manual: "manual",
+    scan: "scan",
+    spec: "spec",
+    previous: "previous",
+    ai: "ai",
+};
+/**
+ * Parse a multi-select mode string like "1,2", "scan manual", or "manual,ai"
+ * into an ordered, de-duplicated list of modes. Defaults to ["scan"].
+ */
+function parseModes(input) {
+    const seen = new Set();
+    for (const tok of input.split(/[\s,]+/).filter(Boolean)) {
+        const m = MODE_TOKENS[tok.toLowerCase()];
+        if (m)
+            seen.add(m);
+    }
+    if (seen.size === 0)
+        seen.add("scan");
+    return [...seen];
+}
+/** Multi-select prompt: the user may combine several sources at once. */
+async function promptModes(rl) {
+    process.stdout.write("\nHow would you like to build the checklist? (choose one or MORE)\n" +
+        "  1. Manual entry — type tasks one by one\n" +
         "  2. Scan repository (git + code analysis)\n" +
         "  3. From a spec / markdown file\n" +
         "  4. From a previous report\n" +
         "  5. AI-assisted (synthesize from tracked signals)\n");
-    const choice = (await ask(rl, "Select [1-5] (default 2): ")).trim();
-    switch (choice) {
-        case "1":
-            return "manual";
-        case "3":
-            return "spec";
-        case "4":
-            return "previous";
-        case "5":
-            return "ai";
-        case "2":
-        case "":
-        default:
-            return "scan";
-    }
+    const choice = (await ask(rl, "Select one or more, e.g. 1,2 or `manual scan` [default 2]: ")).trim();
+    return parseModes(choice || "2");
 }
+function normalizePriority(v) {
+    const s = v.trim().toLowerCase();
+    if (s.startsWith("h"))
+        return "High";
+    if (s.startsWith("l"))
+        return "Low";
+    return "Medium";
+}
+/**
+ * Real checklist-style entry: type a task, set its priority, add optional
+ * notes, then straight on to the next one. An empty task finishes the list.
+ */
 async function manualTasks(rl) {
     const tasks = [];
-    process.stdout.write("\nEnter tasks one per line. Blank line to finish.\n" +
-        "Format: <task text> [| High|Medium|Low] [| notes]\n");
+    process.stdout.write("\nType your tasks one at a time. Press Enter on an empty task to finish.\n");
     for (;;) {
-        const line = (await ask(rl, `  task ${tasks.length + 1}: `)).trim();
-        if (!line)
+        const text = (await ask(rl, `\nTask ${tasks.length + 1}: `)).trim();
+        if (!text)
             break;
-        const parts = line.split("|").map((p) => p.trim());
-        const priority = (["High", "Medium", "Low"].includes(parts[1])
-            ? parts[1]
-            : "Medium");
+        const priority = normalizePriority(await ask(rl, "  Priority [High / Medium / Low, default Medium]: "));
+        const notes = (await ask(rl, "  Notes (optional, Enter to skip): ")).trim();
         tasks.push({
             status: "Not Started",
             priority,
-            task: parts[0],
-            notes: parts[2] || undefined,
+            task: text,
+            notes: notes || undefined,
         });
+        process.stdout.write(`  ✓ added [${priority}] ${text}\n`);
     }
     return tasks;
 }
@@ -373,57 +398,83 @@ async function run(args) {
         return;
     }
     const interactive = !flags.mode && hasTTY();
-    let mode;
+    let modes;
     let rl;
     if (interactive) {
         rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-        mode = await promptMode(rl);
+        modes = await promptModes(rl);
     }
     else {
-        mode = flags.mode || "scan";
+        modes = parseModes(flags.mode || "scan");
     }
-    let tasks = [];
+    const tasks = [];
     let goals = [];
     let deliverables = [];
+    const seenTasks = new Set();
+    /** Add tasks, skipping duplicates (same text, case-insensitive). */
+    const addTasks = (incoming) => {
+        for (const t of incoming) {
+            const key = t.task.trim().toLowerCase();
+            if (key && !seenTasks.has(key)) {
+                seenTasks.add(key);
+                tasks.push(t);
+            }
+        }
+    };
     try {
-        switch (mode) {
-            case "manual": {
-                if (!rl)
-                    throw new Error("Manual mode requires an interactive terminal.");
-                tasks = await manualTasks(rl);
-                goals = await collectList(rl, "Goals — what should be true by the end");
-                deliverables = await collectList(rl, "Expected deliverables");
-                break;
+        // Run every selected source in turn and combine the results.
+        for (const mode of modes) {
+            switch (mode) {
+                case "manual": {
+                    if (!rl) {
+                        console.warn("⚠ Skipping manual entry: needs an interactive terminal.");
+                        break;
+                    }
+                    addTasks(await manualTasks(rl));
+                    break;
+                }
+                case "spec": {
+                    const specPath = flags.spec || flags.file;
+                    if (!specPath) {
+                        console.warn("⚠ Skipping spec source: pass --spec=<path>.");
+                        break;
+                    }
+                    addTasks(buildFromSpec(path.resolve(cwd, specPath)));
+                    break;
+                }
+                case "previous": {
+                    const prev = flags.from || findPreviousChecklist(outDir);
+                    if (!prev) {
+                        console.warn("⚠ Skipping previous-report source: none found.");
+                        break;
+                    }
+                    addTasks(parseMarkdownTaskTable(path.resolve(cwd, prev)));
+                    break;
+                }
+                case "ai": {
+                    addTasks(await buildFromAI(cwd));
+                    break;
+                }
+                case "scan":
+                default: {
+                    const scanned = await buildFromScan(cwd);
+                    addTasks(scanned.tasks);
+                    break;
+                }
             }
-            case "spec": {
-                const specPath = flags.spec || flags.file;
-                if (!specPath)
-                    throw new Error("spec mode requires --spec=<path>");
-                tasks = buildFromSpec(path.resolve(cwd, specPath));
-                break;
-            }
-            case "previous": {
-                const prev = flags.from || findPreviousChecklist(outDir);
-                if (!prev)
-                    throw new Error("No previous checklist found to build from.");
-                tasks = parseMarkdownTaskTable(path.resolve(cwd, prev));
-                break;
-            }
-            case "ai": {
-                tasks = await buildFromAI(cwd);
-                break;
-            }
-            case "scan":
-            default: {
-                const scanned = await buildFromScan(cwd);
-                tasks = scanned.tasks;
-                break;
-            }
+        }
+        // In an interactive session, always let the user add goals & deliverables.
+        if (rl) {
+            goals = await collectList(rl, "Goals — what should be true by the end");
+            deliverables = await collectList(rl, "Expected deliverables");
         }
     }
     finally {
         if (rl)
             rl.close();
+    }
+    if (tasks.length === 0) {
+        console.warn("No tasks were collected from the selected source(s). Writing an empty checklist.");
     }
     const checklist = {
         project,
@@ -436,7 +487,7 @@ async function run(args) {
         deliverables,
     };
     const written = await exportChecklist(checklist, outDir, format, cfg, false, noClobber);
-    recordCompleted("checklist", written, { project, mode });
+    recordCompleted("checklist", written, { project, modes: modes.join("+") });
     console.log(`Checklist generated (${tasks.length} task(s)):\n  ${written.join("\n  ")}`);
 }
 /**

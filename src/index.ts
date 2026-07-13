@@ -57,7 +57,7 @@ function printUsage(): void {
 Usage: dev-workflow <command> [options]
 
 Commands:
-  checklist [--mode=manual|scan|spec|previous|ai] [--blank] [--no-clobber]
+  checklist [--mode=scan,manual,…] [--blank] [--no-clobber]
             [--project P] [--developer D] [--date YYYY-MM-DD] [--sprint S]
             [--spec FILE] [--from FILE] [--out DIR] [--format pdf|md|html]
                        Generate a Development Checklist.
