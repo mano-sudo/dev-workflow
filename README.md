@@ -60,31 +60,36 @@ At runtime, config and live storage are kept under your home directory, not in t
 
 **Prerequisites:** Node.js **>= 18** and Claude Code installed.
 
-### Primary — one command
+### Primary — install straight from GitHub (two commands)
 
 ```bash
-npx dev-workflow install
+npm install -g git+https://github.com/mano-sudo/dev-workflow.git
+dev-workflow install
 ```
 
-This fetches the package, builds it if needed, registers the slash commands with Claude Code, seeds `~/.claude/dev-workflow/`, and runs the first-run prompt.
+The first command downloads the package and **auto-builds it** (via the `prepare`
+script) — no manual clone or `npm run build` needed. The second registers the
+slash commands with Claude Code, seeds `~/.claude/dev-workflow/`, and runs the
+first-run prompts. Then **restart Claude Code** so the commands load.
 
-> **Note:** the `npx` and global-install methods below work once the package is published to npm. Distributing via git? Use the **Manual (from a clone)** steps — each teammate runs the installer locally, and the slash commands are auto-pointed at their own install path.
+> The extension is a local CLI + command files, so the code does have to land on
+> the machine once (that's what `npm install -g` does) — but you never clone or
+> build by hand.
 
-### Alternative — global npm install
+### Alternative — from a clone
+
+```bash
+git clone https://github.com/mano-sudo/dev-workflow.git
+cd dev-workflow
+npm install          # runs the build automatically (prepare script)
+node bin/cli.js install
+```
+
+### Once published to npm
 
 ```bash
 npm install -g dev-workflow
 dev-workflow install
-```
-
-### Manual (from a clone)
-
-```bash
-git clone https://github.com/romancaseres/dev-workflow.git
-cd dev-workflow
-npm install
-npm run build
-node bin/cli.js install
 ```
 
 See [INSTALL.md](./INSTALL.md) for verification, re-configuration and uninstall steps.
