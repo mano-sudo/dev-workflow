@@ -57,6 +57,7 @@ const configCmd = __importStar(require("./commands/config"));
 const history = __importStar(require("./commands/history"));
 const install = __importStar(require("./install"));
 const tracker_1 = require("./services/tracker");
+const background_1 = require("./services/background");
 const VALID_ACTIVITY_TYPES = [
     "feature",
     "bugfix",
@@ -147,6 +148,14 @@ async function main(argv) {
         case "track":
             await runTrack(rest);
             return;
+        case "sync": {
+            // One-shot background sync: record new git commits / file changes into
+            // the tracker. Meant to be driven by a Claude Code hook. Always silent.
+            const i = rest.indexOf("--cwd");
+            const cwd = i >= 0 ? rest[i + 1] : undefined;
+            await (0, background_1.pollOnce)(cwd);
+            return;
+        }
         case "version":
         case "--version":
         case "-v":

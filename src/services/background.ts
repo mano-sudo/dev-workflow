@@ -7,9 +7,12 @@
  * the tracker. It never writes to stdout/stderr and never interrupts Claude.
  */
 import { loadConfig } from "../config";
+import * as fs from "fs";
+import * as path from "path";
 import { getGitContext } from "./git";
 import { trackCommit, track } from "./tracker";
 import { GitContext } from "../types";
+import { storageDir, ensureDirs } from "../config";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -145,4 +148,106 @@ export function stopBackgroundTracking(): void {
     timer = null;
   }
   running = false;
+}
+
+/* ------------------------------------------------------------------ *
+ * One-shot sync (for short-lived hook processes).
+ *
+ * A Claude Code hook runs in a fresh process each time, so the in-memory
+ * `snapshot` above never survives. pollOnce() persists the last-seen git
+ * state to disk (storageDir/snapshot.json), diffs the current state against
+ * it, records the deltas through the tracker, and saves the new state.
+ * ------------------------------------------------------------------ */
+
+interface PersistedSnapshot {
+  branch?: string;
+  commitHashes: string[];
+  changedFiles: string[];
+}
+
+function snapshotPath(): string {
+  return path.join(storageDir(), "snapshot.json");
+}
+
+function loadPersistedSnapshot(): PersistedSnapshot | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(snapshotPath(), "utf8"));
+    if (parsed && Array.isArray(parsed.commitHashes) && Array.isArray(parsed.changedFiles)) {
+      return parsed as PersistedSnapshot;
+    }
+  } catch {
+    /* no snapshot yet, or unreadable — treat as first run */
+  }
+  return null;
+}
+
+function savePersistedSnapshot(s: PersistedSnapshot): void {
+  try {
+    ensureDirs();
+    fs.writeFileSync(snapshotPath(), JSON.stringify(s, null, 2) + "\n", "utf8");
+  } catch {
+    /* swallow — tracking must never break the caller */
+  }
+}
+
+/**
+ * Run a single git reconcile against a disk-persisted snapshot. Records new
+ * commits, branch switches, and newly-changed working-tree files, then saves
+ * the new snapshot. Silent and never throws — safe to call from a hook.
+ */
+export async function pollOnce(cwd?: string): Promise<void> {
+  let ctx: GitContext;
+  try {
+    ctx = await getGitContext(cwd || process.cwd());
+  } catch {
+    return;
+  }
+  if (!ctx.isRepo) return;
+
+  const commits = ctx.recentCommits || [];
+  const nextCommits = commits.map((c) => c.hash);
+  const nextChanged = ctx.changedFiles || [];
+  const prev = loadPersistedSnapshot();
+
+  // First run for this storage: prime silently so we never dump history.
+  if (!prev) {
+    savePersistedSnapshot({
+      branch: ctx.branch,
+      commitHashes: nextCommits,
+      changedFiles: nextChanged,
+    });
+    return;
+  }
+
+  const seenCommits = new Set(prev.commitHashes);
+  const seenChanged = new Set(prev.changedFiles);
+
+  if (ctx.branch && ctx.branch !== prev.branch) {
+    track("command", `Switched branch to ${ctx.branch}`, {
+      from: prev.branch,
+      to: ctx.branch,
+    });
+  }
+
+  for (const c of commits) {
+    if (!seenCommits.has(c.hash)) {
+      trackCommit(c.subject || c.hash.slice(0, 8), {
+        hash: c.hash,
+        branch: ctx.branch,
+        date: c.date,
+      });
+    }
+  }
+
+  for (const f of nextChanged) {
+    if (!seenChanged.has(f)) {
+      track("file-edited", f, { file: f });
+    }
+  }
+
+  savePersistedSnapshot({
+    branch: ctx.branch,
+    commitHashes: nextCommits,
+    changedFiles: nextChanged,
+  });
 }
