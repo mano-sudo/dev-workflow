@@ -10,7 +10,7 @@
 
 - **Two flagship documents** — a *Development Checklist* (what you plan to do) and a *Development Worklog* (what you actually did), rendered to a precise A4 design spec.
 - **Five checklist modes** — `blank`, `interactive`, `from-git`, `from-session`, and `auto`.
-- **Background tracking** — an opt-in recorder that logs commits, file create/edit/delete, commands, builds and package changes into `session.json`, so your worklog writes itself.
+- **Background tracking** — an opt-in recorder that logs commits, file create/edit/delete, commands, builds and package changes into `session.json`, so your worklog writes itself. In Claude Code it runs via a one-shot `sync` command wired to a `Stop` hook (see [Enabling automatic tracking](#enabling-automatic-tracking-in-claude-code-stop-hook)).
 - **Multi-format export** — the same document model renders to **PDF**, **Markdown**, **DOCX**, and **HTML**.
 - **Offline & dependency-light** — the only runtime dependency is `pdfkit`. Markdown→HTML, DOCX packaging and argument parsing are all hand-rolled.
 - **Git integration** — reads branch, status, changed files, recent commits and diff stats to seed documents.
@@ -157,6 +157,16 @@ Examples:
 /checklist from-git --sprint "Sprint 14" --developer "Roman Caseres"
 ```
 
+Goals and deliverables can be supplied non-interactively with `--goals` and
+`--deliverables` (semicolon-, pipe-, or newline-separated), so a complete
+checklist can be generated in one command:
+
+```bash
+/checklist from-git \
+  --goals "Ship the payslip fix; All QA modules green" \
+  --deliverables "QA checklist w/ pass-fail; Bug list per module"
+```
+
 ### `/worklog` — build a Development Worklog
 
 Turns your checklist and tracked activity into an end-of-day worklog: checklist completion table, additional tasks, summary stats, blockers, next priorities, time spent and overall status.
@@ -230,6 +240,57 @@ When enabled, the tracker appends `ActivityEntry` records to `~/.claude/dev-work
 ```
 
 At the end of a day (or on `/worklog`), the session can be rolled into `completed.json` for history.
+
+### Enabling automatic tracking in Claude Code (Stop hook)
+
+> **Important:** setting `backgroundTracking: true` in config is **not enough on its
+> own** inside Claude Code. Claude runs hooks in short-lived processes, so the
+> long-running poller can't stay alive between turns. To make tracking truly
+> automatic you wire a **`Stop` hook** that runs a one-shot sync after each turn.
+
+The `sync` command performs a single git reconcile — it diffs the current repo
+state against a disk-persisted snapshot (`~/.claude/dev-workflow/storage/snapshot.json`)
+and records any new commits, branch switches, and changed files into
+`session.json`. It is silent and never throws, so it is safe to run from a hook.
+
+```bash
+dev-workflow sync                 # sync the current directory
+dev-workflow sync --cwd <dir>     # sync a specific repo
+```
+
+Add this to **`~/.claude/settings.json`** (create the `hooks` key if missing):
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /path/to/dev-workflow/bin/cli.js sync --cwd \"${CLAUDE_PROJECT_DIR:-$PWD}\" >/dev/null 2>&1"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Replace `/path/to/dev-workflow` with your clone path (or just `dev-workflow` if it
+is installed globally on your `PATH`). **Restart Claude Code** so the hook loads —
+`settings.json` is read at session start. From then on, every time a turn ends the
+tracker records what changed, and `/worklog` reconciles it against your checklist.
+
+Notes:
+- The hook (and `settings.json`) is **per-machine config**, not part of this repo —
+  each user must add it once.
+- The tracker records **git activity** (commits / branch switches / file edits),
+  not individual checklist ticks. `/worklog` maps that activity back onto your
+  checklist tasks — so work that produces commits or file changes is what gets
+  auto-detected.
+- On the very first `sync` the snapshot is primed silently (no history dump); only
+  changes made *after* that point are recorded.
 
 ---
 
