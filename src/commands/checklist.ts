@@ -507,6 +507,16 @@ export async function run(args: string[]): Promise<void> {
     if (rl) rl.close();
   }
 
+  // Non-interactive: accept goals & deliverables via flags (semicolon-, pipe-,
+  // or newline-separated). These merge with anything collected interactively.
+  const splitList = (v?: string): string[] =>
+    (v || "")
+      .split(/[;|]|\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  goals.push(...splitList(flags.goals));
+  deliverables.push(...splitList(flags.deliverables));
+
   if (tasks.length === 0) {
     console.warn(
       "No tasks were collected from the selected source(s). Writing an empty checklist."

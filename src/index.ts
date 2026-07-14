@@ -22,6 +22,7 @@ import * as configCmd from "./commands/config";
 import * as history from "./commands/history";
 import * as install from "./install";
 import { track } from "./services/tracker";
+import { pollOnce } from "./services/background";
 import { ActivityType } from "./types";
 
 const VALID_ACTIVITY_TYPES: ActivityType[] = [
@@ -124,6 +125,14 @@ export async function main(argv: string[]): Promise<void> {
     case "track":
       await runTrack(rest);
       return;
+    case "sync": {
+      // One-shot background sync: record new git commits / file changes into
+      // the tracker. Meant to be driven by a Claude Code hook. Always silent.
+      const i = rest.indexOf("--cwd");
+      const cwd = i >= 0 ? rest[i + 1] : undefined;
+      await pollOnce(cwd);
+      return;
+    }
     case "version":
     case "--version":
     case "-v":
