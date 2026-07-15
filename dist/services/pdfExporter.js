@@ -220,14 +220,24 @@ function drawCheckbox(doc, x, y, size = 11, checked = false) {
 }
 function parseRuns(input) {
     const runs = [];
-    const parts = input.split("`");
-    for (let i = 0; i < parts.length; i++) {
-        if (parts[i] === "")
+    const codeParts = input.split("`");
+    for (let i = 0; i < codeParts.length; i++) {
+        if (codeParts[i] === "")
             continue;
-        runs.push({ text: parts[i], code: i % 2 === 1 });
+        if (i % 2 === 1) {
+            runs.push({ text: codeParts[i], code: true, bold: false });
+            continue;
+        }
+        // Non-code segment: split out **bold** spans.
+        const boldParts = codeParts[i].split("**");
+        for (let j = 0; j < boldParts.length; j++) {
+            if (boldParts[j] === "")
+                continue;
+            runs.push({ text: boldParts[j], code: false, bold: j % 2 === 1 });
+        }
     }
     if (runs.length === 0)
-        runs.push({ text: "", code: false });
+        runs.push({ text: "", code: false, bold: false });
     return runs;
 }
 /**
@@ -246,12 +256,13 @@ function drawRichText(ctx, text, x, y, width, opts = {}) {
     for (const r of runs) {
         const words = r.text.split(/(\s+)/).filter((w) => w.length > 0);
         for (const w of words)
-            toks.push({ word: w, code: r.code });
+            toks.push({ word: w, code: r.code, bold: r.bold });
     }
+    const fontFor = (t) => t.code ? FONT.mono : t.bold ? FONT.bold : baseFont;
     let cx = x;
     let cy = y;
     const measure = (t) => {
-        doc.font(t.code ? FONT.mono : baseFont).fontSize(size);
+        doc.font(fontFor(t)).fontSize(size);
         return doc.widthOfString(t.word);
     };
     const flushNewline = () => {
@@ -281,7 +292,7 @@ function drawRichText(ctx, text, x, y, width, opts = {}) {
             });
         }
         else {
-            doc.font(baseFont).fontSize(size).fillColor(color).text(t.word, cx, cy, {
+            doc.font(fontFor(t)).fontSize(size).fillColor(color).text(t.word, cx, cy, {
                 lineBreak: false,
             });
         }
@@ -299,13 +310,13 @@ function measureRichText(ctx, text, width, size = 8.5, baseFont = FONT.reg) {
     for (const r of runs) {
         const words = r.text.split(/(\s+)/).filter((w) => w.length > 0);
         for (const w of words)
-            toks.push({ word: w, code: r.code });
+            toks.push({ word: w, code: r.code, bold: r.bold });
     }
     let cx = 0;
     let lines = 1;
     for (const t of toks) {
         const isSpace = /^\s+$/.test(t.word);
-        doc.font(t.code ? FONT.mono : baseFont).fontSize(size);
+        doc.font(t.code ? FONT.mono : t.bold ? FONT.bold : baseFont).fontSize(size);
         const w = doc.widthOfString(t.word);
         if (!isSpace && cx + w > width + 0.5 && cx > 0) {
             lines++;
@@ -336,9 +347,11 @@ function titleBlock(ctx, title, subtitle) {
         .stroke()
         .restore();
     y += 6;
-    doc.font(FONT.reg).fontSize(9.5).fillColor(COLORS.muted);
-    doc.text(subtitle || "", ctx.left, y, { width: ctx.contentW });
-    doc.y += 8;
+    const h = drawRichText(ctx, subtitle || "", ctx.left, y, ctx.contentW, {
+        size: 9.5,
+        color: COLORS.muted,
+    });
+    doc.y = y + h;
 }
 /* ------------------------------------------------------------------ */
 /* HOW TO USE callout                                                  */
@@ -446,6 +459,48 @@ function sectionCaption(ctx, text) {
         .fillColor(COLORS.muted)
         .text(text, ctx.left, doc.y, { width: ctx.contentW });
     doc.y += 4;
+}
+/**
+ * Worklog "Checklist Completion" caption + inline status key (matches the
+ * reference): "Every task from {ref}, and how it ended. ✓ Completed · ● Partial
+ * · ✕ Not Done." with the marks colored. Uses `continued` runs for inline color.
+ */
+function completionCaption(ctx, ref) {
+    const { doc } = ctx;
+    const size = 9;
+    const y = doc.y;
+    const midY = y + 5;
+    const intro = ref
+        ? `Every task from ${ref}, and how it ended.   `
+        : "Every task from the source checklist, and how it ended.   ";
+    doc.font(FONT.obl).fontSize(size).fillColor(COLORS.muted).text(intro, ctx.left, y, { lineBreak: false });
+    let x = ctx.left + doc.widthOfString(intro);
+    const label = (s, color) => {
+        doc.font(FONT.reg).fontSize(size).fillColor(color).text(s, x, y, { lineBreak: false });
+        x += doc.widthOfString(s);
+    };
+    const sep = () => label("   ·   ", COLORS.faint);
+    // ✓ Completed (vector check — Segoe UI lacks the ✓ glyph)
+    doc.save().lineWidth(1.2).strokeColor(COLORS.doneGreen)
+        .moveTo(x, midY).lineTo(x + 2, midY + 2).lineTo(x + 5, midY - 3).stroke().restore();
+    x += 8;
+    label("Completed", COLORS.muted);
+    sep();
+    // ● Partial
+    doc.save().fillColor(COLORS.amber).circle(x + 2.5, midY, 2.5).fill().restore();
+    x += 8;
+    label("Partial", COLORS.muted);
+    sep();
+    // ✗ Not Done (vector cross)
+    doc.save().lineWidth(1.2).strokeColor(COLORS.red)
+        .moveTo(x, midY - 2.5).lineTo(x + 5, midY + 2.5).moveTo(x + 5, midY - 2.5).lineTo(x, midY + 2.5).stroke().restore();
+    x += 8;
+    label("Not Done", COLORS.muted);
+    doc.y = y + size + 5;
+}
+/** Strip markdown emphasis markers for plain-text contexts (footer, etc.). */
+function stripMarkdown(s) {
+    return s.replace(/\*\*/g, "").replace(/`/g, "");
 }
 /* ------------------------------------------------------------------ */
 /* Hairline-separated free-text lines                                  */
@@ -796,7 +851,7 @@ async function renderChecklistPDF(data, outPath, opts = {}) {
     registerFonts(doc);
     const stem = fileStem(outPath);
     const subtitle = blank ? "" : data.subtitle || "";
-    const footerMid = opts.footerNote || subtitle || "Planned tasks, goals & deliverables";
+    const footerMid = stripMarkdown(opts.footerNote || subtitle || "Planned tasks, goals & deliverables");
     const footer = `Development Checklist · ${footerMid} · ${stem}`;
     const ctx = makeCtx(doc, footer);
     drawFooter(ctx);
@@ -906,7 +961,7 @@ async function renderWorklogPDF(data, outPath, opts = {}) {
     registerFonts(doc);
     const stem = fileStem(outPath);
     const subtitle = blank ? "" : data.subtitle || "";
-    const footerMid = opts.footerNote || subtitle || "Daily engineering worklog";
+    const footerMid = stripMarkdown(opts.footerNote || subtitle || "Daily engineering worklog");
     const footer = `Development Worklog · ${footerMid} · ${stem}`;
     const ctx = makeCtx(doc, footer);
     drawFooter(ctx);
@@ -919,10 +974,8 @@ async function renderWorklogPDF(data, outPath, opts = {}) {
     ]);
     // 1. CHECKLIST COMPLETION
     sectionHeader(ctx, "1. Checklist Completion");
-    const ref = blank ? "" : data.checklistRef || "";
-    sectionCaption(ctx, ref
-        ? `Every development task from ${ref}.`
-        : "Every development task from the source checklist.");
+    if (!blank)
+        completionCaption(ctx, data.checklistRef || "");
     const cCols = [
         { header: "Planned Task", width: 230 },
         { header: "Status", width: 90 },

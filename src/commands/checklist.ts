@@ -545,7 +545,7 @@ export async function run(args: string[]): Promise<void> {
     sprint,
     subtitle:
       flags.subtitle ||
-      "Filled in before the work session — the plan for today's tasks.",
+      "Filled in **before** the work session — the plan for today's tasks.",
     tasks,
     goals,
     deliverables,

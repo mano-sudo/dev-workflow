@@ -478,7 +478,7 @@ export async function run(args: string[]): Promise<void> {
     sprint,
     subtitle:
       flags.subtitle ||
-      "Filled in at the end of the session — the full record of what actually happened.",
+      "Filled in **at the end** of the session — the full record of what actually happened.",
     checklistItems: [],
     checklistRef: flags.checklistRef,
     additional: [],
