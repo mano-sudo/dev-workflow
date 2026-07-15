@@ -346,9 +346,10 @@ async function exportChecklist(
   format: ExportFormat,
   cfg: DevWorkflowConfig,
   blank: boolean,
-  noClobber = false
+  noClobber = false,
+  dateObj: Date = new Date()
 ): Promise<string[]> {
-  const stem = fileStem(checklist.developer || "developer", new Date());
+  const stem = fileStem(checklist.developer || "developer", dateObj);
   const written: string[] = [];
 
   // Write a structured sidecar so a worklog can reconcile against this exact
@@ -422,7 +423,7 @@ export async function run(args: string[]): Promise<void> {
       goals: [],
       deliverables: [],
     };
-    const written = await exportChecklist(checklist, outDir, format, cfg, true, noClobber);
+    const written = await exportChecklist(checklist, outDir, format, cfg, true, noClobber, date);
     recordCompleted("checklist", written, { blank: true });
     console.log(`Blank checklist written:\n  ${written.join("\n  ")}`);
     return;
@@ -556,7 +557,7 @@ export async function run(args: string[]): Promise<void> {
     deliverables,
   };
 
-  const written = await exportChecklist(checklist, outDir, format, cfg, false, noClobber);
+  const written = await exportChecklist(checklist, outDir, format, cfg, false, noClobber, date);
   recordCompleted("checklist", written, { project, modes: modes.join("+") });
   console.log(
     `Checklist generated (${tasks.length} task(s)):\n  ${written.join("\n  ")}`

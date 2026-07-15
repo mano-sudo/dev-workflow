@@ -337,8 +337,8 @@ async function collectList(rl, label) {
     return out;
 }
 /** Write the resolved checklist in every requested format; returns paths. */
-async function exportChecklist(checklist, outDir, format, cfg, blank, noClobber = false) {
-    const stem = fileStem(checklist.developer || "developer", new Date());
+async function exportChecklist(checklist, outDir, format, cfg, blank, noClobber = false, dateObj = new Date()) {
+    const stem = fileStem(checklist.developer || "developer", dateObj);
     const written = [];
     // Write a structured sidecar so a worklog can reconcile against this exact
     // checklist later (paste the report path → tasks are recovered perfectly).
@@ -402,7 +402,7 @@ async function run(args) {
             goals: [],
             deliverables: [],
         };
-        const written = await exportChecklist(checklist, outDir, format, cfg, true, noClobber);
+        const written = await exportChecklist(checklist, outDir, format, cfg, true, noClobber, date);
         recordCompleted("checklist", written, { blank: true });
         console.log(`Blank checklist written:\n  ${written.join("\n  ")}`);
         return;
@@ -525,7 +525,7 @@ async function run(args) {
         goals,
         deliverables,
     };
-    const written = await exportChecklist(checklist, outDir, format, cfg, false, noClobber);
+    const written = await exportChecklist(checklist, outDir, format, cfg, false, noClobber, date);
     recordCompleted("checklist", written, { project, modes: modes.join("+") });
     console.log(`Checklist generated (${tasks.length} task(s)):\n  ${written.join("\n  ")}`);
 }
