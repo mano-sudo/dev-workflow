@@ -74,6 +74,7 @@ const PAGE = {
 const FONT = {
     reg: "Helvetica",
     bold: "Helvetica-Bold",
+    semibold: "Helvetica-Bold",
     obl: "Helvetica-Oblique",
     mono: "Courier",
 };
@@ -89,12 +90,14 @@ const FONT = {
 const FONT_SOURCES = {
     reg: ["/mnt/c/Windows/Fonts/segoeui.ttf", "C:\\Windows\\Fonts\\segoeui.ttf", "C:/Windows/Fonts/segoeui.ttf"],
     bold: ["/mnt/c/Windows/Fonts/segoeuib.ttf", "C:\\Windows\\Fonts\\segoeuib.ttf", "C:/Windows/Fonts/segoeuib.ttf"],
+    semibold: ["/mnt/c/Windows/Fonts/seguisb.ttf", "C:\\Windows\\Fonts\\seguisb.ttf", "C:/Windows/Fonts/seguisb.ttf"],
     obl: ["/mnt/c/Windows/Fonts/segoeuii.ttf", "C:\\Windows\\Fonts\\segoeuii.ttf", "C:/Windows/Fonts/segoeuii.ttf"],
     mono: ["/mnt/c/Windows/Fonts/consola.ttf", "C:\\Windows\\Fonts\\consola.ttf", "C:/Windows/Fonts/consola.ttf"],
 };
 const FONT_FALLBACK = {
     reg: "Helvetica",
     bold: "Helvetica-Bold",
+    semibold: "Helvetica-Bold",
     obl: "Helvetica-Oblique",
     mono: "Courier",
 };
@@ -112,7 +115,7 @@ function firstExistingFont(paths) {
 }
 /** Register OS fonts on `doc` (per-document) and point FONT at them. */
 function registerFonts(doc) {
-    ["reg", "bold", "obl", "mono"].forEach((face) => {
+    ["reg", "bold", "semibold", "obl", "mono"].forEach((face) => {
         const src = firstExistingFont(FONT_SOURCES[face]);
         if (src) {
             const name = `ui-${face}`;
@@ -369,7 +372,7 @@ function howToUse(ctx, lines) {
     const tx = ctx.left + barW + padX;
     let ty = top + padY;
     doc
-        .font(FONT.bold)
+        .font(FONT.semibold)
         .fontSize(8)
         .fillColor(COLORS.accentBar)
         .text("HOW TO USE THIS PAGE", tx, ty, {
@@ -392,7 +395,7 @@ function howToUse(ctx, lines) {
 function metaCell(ctx, label, value, x, y, w) {
     const { doc } = ctx;
     doc
-        .font(FONT.bold)
+        .font(FONT.semibold)
         .fontSize(8)
         .fillColor(COLORS.muted)
         .text(label.toUpperCase(), x, y, { width: w, characterSpacing: 0.6 });
@@ -425,7 +428,7 @@ function sectionHeader(ctx, text) {
     ensureSpace(ctx, 26);
     doc.y += 4;
     doc
-        .font(FONT.bold)
+        .font(FONT.semibold)
         .fontSize(12)
         .fillColor(COLORS.ink)
         .text(text.toUpperCase(), ctx.left, doc.y, { width: ctx.contentW });
@@ -505,7 +508,7 @@ function drawTable(ctx, cols, rows) {
         let cx = ctx.left;
         for (let i = 0; i < cols.length; i++) {
             doc
-                .font(FONT.bold)
+                .font(FONT.semibold)
                 .fontSize(8)
                 .fillColor(COLORS.muted)
                 .text(cols[i].header.toUpperCase(), cx + pad, top + 6, {

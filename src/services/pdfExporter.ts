@@ -51,6 +51,7 @@ const PAGE = {
 const FONT = {
   reg: "Helvetica",
   bold: "Helvetica-Bold",
+  semibold: "Helvetica-Bold",
   obl: "Helvetica-Oblique",
   mono: "Courier",
 };
@@ -67,15 +68,17 @@ type Doc = InstanceType<typeof PDFDocument>;
  * is a pixel match; otherwise fall back to the built-in Helvetica/Courier.
  * System fonts are read from the OS at runtime — never bundled/redistributed.
  */
-const FONT_SOURCES: Record<"reg" | "bold" | "obl" | "mono", string[]> = {
+const FONT_SOURCES: Record<"reg" | "bold" | "semibold" | "obl" | "mono", string[]> = {
   reg: ["/mnt/c/Windows/Fonts/segoeui.ttf", "C:\\Windows\\Fonts\\segoeui.ttf", "C:/Windows/Fonts/segoeui.ttf"],
   bold: ["/mnt/c/Windows/Fonts/segoeuib.ttf", "C:\\Windows\\Fonts\\segoeuib.ttf", "C:/Windows/Fonts/segoeuib.ttf"],
+  semibold: ["/mnt/c/Windows/Fonts/seguisb.ttf", "C:\\Windows\\Fonts\\seguisb.ttf", "C:/Windows/Fonts/seguisb.ttf"],
   obl: ["/mnt/c/Windows/Fonts/segoeuii.ttf", "C:\\Windows\\Fonts\\segoeuii.ttf", "C:/Windows/Fonts/segoeuii.ttf"],
   mono: ["/mnt/c/Windows/Fonts/consola.ttf", "C:\\Windows\\Fonts\\consola.ttf", "C:/Windows/Fonts/consola.ttf"],
 };
-const FONT_FALLBACK: Record<"reg" | "bold" | "obl" | "mono", string> = {
+const FONT_FALLBACK: Record<"reg" | "bold" | "semibold" | "obl" | "mono", string> = {
   reg: "Helvetica",
   bold: "Helvetica-Bold",
+  semibold: "Helvetica-Bold",
   obl: "Helvetica-Oblique",
   mono: "Courier",
 };
@@ -93,7 +96,7 @@ function firstExistingFont(paths: string[]): string | null {
 
 /** Register OS fonts on `doc` (per-document) and point FONT at them. */
 function registerFonts(doc: Doc): void {
-  (["reg", "bold", "obl", "mono"] as const).forEach((face) => {
+  (["reg", "bold", "semibold", "obl", "mono"] as const).forEach((face) => {
     const src = firstExistingFont(FONT_SOURCES[face]);
     if (src) {
       const name = `ui-${face}`;
@@ -417,7 +420,7 @@ function howToUse(ctx: Ctx, lines: string[]): void {
   let ty = top + padY;
 
   doc
-    .font(FONT.bold)
+    .font(FONT.semibold)
     .fontSize(8)
     .fillColor(COLORS.accentBar)
     .text("HOW TO USE THIS PAGE", tx, ty, {
@@ -451,7 +454,7 @@ function metaCell(
 ): void {
   const { doc } = ctx;
   doc
-    .font(FONT.bold)
+    .font(FONT.semibold)
     .fontSize(8)
     .fillColor(COLORS.muted)
     .text(label.toUpperCase(), x, y, { width: w, characterSpacing: 0.6 });
@@ -490,7 +493,7 @@ function sectionHeader(ctx: Ctx, text: string): void {
   ensureSpace(ctx, 26);
   doc.y += 4;
   doc
-    .font(FONT.bold)
+    .font(FONT.semibold)
     .fontSize(12)
     .fillColor(COLORS.ink)
     .text(text.toUpperCase(), ctx.left, doc.y, { width: ctx.contentW });
@@ -609,7 +612,7 @@ function drawTable(ctx: Ctx, cols: Column[], rows: TableRow[]): void {
     let cx = ctx.left;
     for (let i = 0; i < cols.length; i++) {
       doc
-        .font(FONT.bold)
+        .font(FONT.semibold)
         .fontSize(8)
         .fillColor(COLORS.muted)
         .text(cols[i].header.toUpperCase(), cx + pad, top + 6, {
