@@ -32,7 +32,8 @@ function todayISO(): string {
 export function track(
   type: ActivityType,
   description: string,
-  meta?: Record<string, unknown>
+  meta?: Record<string, unknown>,
+  result?: string
 ): void {
   const entry: ActivityEntry = {
     time: nowHM(),
@@ -40,6 +41,9 @@ export function track(
     description,
     date: todayISO(),
   };
+  if (result && result.trim()) {
+    entry.result = result.trim();
+  }
   if (meta && Object.keys(meta).length > 0) {
     entry.meta = meta;
   }

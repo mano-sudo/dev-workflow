@@ -10,7 +10,7 @@ import { ActivityType } from "../types";
  * Record an activity of `type` with a human `description` and optional
  * structured `meta`. Timestamped "HH:MM" / today's date. Never throws.
  */
-export declare function track(type: ActivityType, description: string, meta?: Record<string, unknown>): void;
+export declare function track(type: ActivityType, description: string, meta?: Record<string, unknown>, result?: string): void;
 export declare function trackFeature(description: string, meta?: Record<string, unknown>): void;
 export declare function trackBugfix(description: string, meta?: Record<string, unknown>): void;
 export declare function trackCommit(description: string, meta?: Record<string, unknown>): void;

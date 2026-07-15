@@ -160,7 +160,7 @@ function summaryFromWorklog(w: Worklog): string {
   const total = items.length;
   const completed = items.filter((i) => i.status === "Completed").length;
   const partial = items.filter((i) => i.status === "Partial").length;
-  const additional = (w.additional || []).filter((a) => a.trim()).length;
+  const additional = (w.additional || []).filter((a) => a.task && a.task.trim()).length;
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
   return [
     `- **${completed} / ${total}** gap tasks completed`,
@@ -215,7 +215,10 @@ export function worklogToTemplateData(w: Worklog): TemplateData {
     version: w.sprint || "",
     subtitle: w.subtitle || "",
     completed,
-    additional: bulletList(w.additional, "None — everything was planned."),
+    additional: bulletList(
+      (w.additional || []).map((a) => (a.result ? `${a.task} — ${a.result}` : a.task)),
+      "None — everything was planned."
+    ),
     summary: summaryFromWorklog(w),
     notCompleted: bulletList(w.notCompleted, "Nothing outstanding."),
     blockers: bulletList(w.blockers, "No blockers."),

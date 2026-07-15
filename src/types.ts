@@ -100,7 +100,8 @@ export interface Worklog {
   checklistItems: WorklogChecklistItem[];
   /** Reference to the source checklist, e.g. "CASERES_CHECKLIST_07-11-2026". */
   checklistRef?: string;
-  additional: string[];
+  /** Beyond-checklist work, rendered as a task/status/result table. */
+  additional: WorklogChecklistItem[];
   notCompleted: string[];
   blockers: string[];
   next: string[];
@@ -134,6 +135,8 @@ export interface ActivityEntry {
   description: string;
   /** ISO date "YYYY-MM-DD" this entry belongs to. */
   date?: string;
+  /** Optional real-world outcome ("what happened"), shown in the Result column. */
+  result?: string;
   /** Optional structured detail (file path, commit hash, etc.). */
   meta?: Record<string, unknown>;
 }

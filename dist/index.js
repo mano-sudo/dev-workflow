@@ -114,15 +114,20 @@ Commands:
 }
 async function runTrack(args) {
     const type = args[0];
-    const description = args.slice(1).join(" ").trim();
+    // Optional real outcome after a ` :: ` delimiter, e.g.
+    //   track feature "Endorsement branch picker :: shipped + tested, committed"
+    const raw = args.slice(1).join(" ").trim();
+    const [descPart, ...resultParts] = raw.split(" :: ");
+    const description = descPart.trim();
+    const result = resultParts.join(" :: ").trim();
     if (!type || !VALID_ACTIVITY_TYPES.includes(type)) {
-        throw new Error(`track requires a valid type as the first argument.\n  Valid types: ${VALID_ACTIVITY_TYPES.join(", ")}\n  Usage: dev-workflow track <type> <description>`);
+        throw new Error(`track requires a valid type as the first argument.\n  Valid types: ${VALID_ACTIVITY_TYPES.join(", ")}\n  Usage: dev-workflow track <type> <description> [ :: <result> ]`);
     }
     if (!description) {
-        throw new Error("track requires a description: track <type> <description>");
+        throw new Error("track requires a description: track <type> <description> [ :: <result> ]");
     }
-    await (0, tracker_1.track)(type, description);
-    console.log(`Tracked [${type}] ${description}`);
+    await (0, tracker_1.track)(type, description, undefined, result || undefined);
+    console.log(`Tracked [${type}] ${description}${result ? ` :: ${result}` : ""}`);
 }
 async function main(argv) {
     const [command, ...rest] = argv;

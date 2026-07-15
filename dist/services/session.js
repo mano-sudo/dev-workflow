@@ -37,6 +37,7 @@ exports.getSessionPath = getSessionPath;
 exports.readSession = readSession;
 exports.appendActivity = appendActivity;
 exports.todaysActivities = todaysActivities;
+exports.activitiesForDate = activitiesForDate;
 exports.resetDaily = resetDaily;
 exports.archiveCompleted = archiveCompleted;
 /**
@@ -111,6 +112,17 @@ function appendActivity(entry) {
 function todaysActivities() {
     const t = today();
     return readSession().filter((e) => (e.date || t) === t);
+}
+/**
+ * Entries for a specific ISO date "YYYY-MM-DD" (used to regenerate a past day).
+ * Reads both the live session and the completed-day archive, since a rolled-over
+ * day's entries live in completed.json.
+ */
+function activitiesForDate(iso) {
+    const t = today();
+    const live = readSession().filter((e) => (e.date || t) === iso);
+    const archived = readJsonArray(getCompletedPath()).filter((e) => (e.date || "") === iso);
+    return [...archived, ...live];
 }
 /**
  * If the live session contains entries from a previous day, archive all of them

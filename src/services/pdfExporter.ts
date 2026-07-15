@@ -43,7 +43,9 @@ const COLORS = {
 
 const PAGE = {
   size: "A4" as const,
-  margin: 54,
+  // ~0.44in — matches the reference's browser print density so the same content
+  // fits on one page with the same ~530pt content width.
+  margin: 32,
 };
 
 const FONT = {
@@ -54,6 +56,58 @@ const FONT = {
 };
 
 type Doc = InstanceType<typeof PDFDocument>;
+
+/* ------------------------------------------------------------------ */
+/* Font registration                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The reference documents were rendered on Windows with Segoe UI + Consolas.
+ * When those OS fonts are present (Windows / WSL), register them so the output
+ * is a pixel match; otherwise fall back to the built-in Helvetica/Courier.
+ * System fonts are read from the OS at runtime — never bundled/redistributed.
+ */
+const FONT_SOURCES: Record<"reg" | "bold" | "obl" | "mono", string[]> = {
+  reg: ["/mnt/c/Windows/Fonts/segoeui.ttf", "C:\\Windows\\Fonts\\segoeui.ttf", "C:/Windows/Fonts/segoeui.ttf"],
+  bold: ["/mnt/c/Windows/Fonts/segoeuib.ttf", "C:\\Windows\\Fonts\\segoeuib.ttf", "C:/Windows/Fonts/segoeuib.ttf"],
+  obl: ["/mnt/c/Windows/Fonts/segoeuii.ttf", "C:\\Windows\\Fonts\\segoeuii.ttf", "C:/Windows/Fonts/segoeuii.ttf"],
+  mono: ["/mnt/c/Windows/Fonts/consola.ttf", "C:\\Windows\\Fonts\\consola.ttf", "C:/Windows/Fonts/consola.ttf"],
+};
+const FONT_FALLBACK: Record<"reg" | "bold" | "obl" | "mono", string> = {
+  reg: "Helvetica",
+  bold: "Helvetica-Bold",
+  obl: "Helvetica-Oblique",
+  mono: "Courier",
+};
+
+function firstExistingFont(paths: string[]): string | null {
+  for (const p of paths) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+/** Register OS fonts on `doc` (per-document) and point FONT at them. */
+function registerFonts(doc: Doc): void {
+  (["reg", "bold", "obl", "mono"] as const).forEach((face) => {
+    const src = firstExistingFont(FONT_SOURCES[face]);
+    if (src) {
+      const name = `ui-${face}`;
+      try {
+        doc.registerFont(name, src);
+        FONT[face] = name;
+        return;
+      } catch {
+        /* fall through to built-in */
+      }
+    }
+    FONT[face] = FONT_FALLBACK[face];
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /* Layout context                                                      */
@@ -205,7 +259,7 @@ function drawRichText(
   const color = opts.color ?? COLORS.body;
   const baseFont = opts.font ?? FONT.reg;
   const lineGap = 2;
-  const lineHeight = size + lineGap + 1.5;
+  const lineHeight = size + lineGap;
 
   const runs = parseRuns(text);
   // Tokenize into words tagged with code flag; keep spaces.
@@ -273,7 +327,7 @@ function measureRichText(
 ): number {
   const { doc } = ctx;
   const lineGap = 2;
-  const lineHeight = size + lineGap + 1.5;
+  const lineHeight = size + lineGap;
   const runs = parseRuns(text);
   interface Tok {
     word: string;
@@ -307,9 +361,9 @@ function measureRichText(
 function titleBlock(ctx: Ctx, title: string, subtitle: string): void {
   const { doc } = ctx;
   doc.y = PAGE.margin;
-  doc.font(FONT.bold).fontSize(26).fillColor(COLORS.ink);
+  doc.font(FONT.bold).fontSize(22).fillColor(COLORS.ink);
   doc.text(title, ctx.left, doc.y, { width: ctx.contentW });
-  let y = doc.y + 6;
+  let y = doc.y + 5;
   // 2pt ink rule
   doc
     .save()
@@ -319,10 +373,10 @@ function titleBlock(ctx: Ctx, title: string, subtitle: string): void {
     .lineTo(ctx.right, y)
     .stroke()
     .restore();
-  y += 8;
+  y += 6;
   doc.font(FONT.reg).fontSize(9.5).fillColor(COLORS.muted);
   doc.text(subtitle || "", ctx.left, y, { width: ctx.contentW });
-  doc.y += 14;
+  doc.y += 8;
 }
 
 /* ------------------------------------------------------------------ */
@@ -332,12 +386,12 @@ function titleBlock(ctx: Ctx, title: string, subtitle: string): void {
 function howToUse(ctx: Ctx, lines: string[]): void {
   const { doc } = ctx;
   const padX = 12;
-  const padY = 10;
+  const padY = 7;
   const barW = 3;
   const innerW = ctx.contentW - padX * 2 - barW;
 
-  const headH = 7.5 + 6;
-  const bodyLineH = 13;
+  const headH = 8 + 4;
+  const bodyLineH = 12;
   const bodyH = lines.length * bodyLineH;
   const boxH = padY * 2 + headH + bodyH;
 
@@ -364,7 +418,7 @@ function howToUse(ctx: Ctx, lines: string[]): void {
 
   doc
     .font(FONT.bold)
-    .fontSize(7.5)
+    .fontSize(8)
     .fillColor(COLORS.accentBar)
     .text("HOW TO USE THIS PAGE", tx, ty, {
       width: innerW,
@@ -372,7 +426,7 @@ function howToUse(ctx: Ctx, lines: string[]): void {
     });
   ty += headH;
 
-  doc.font(FONT.reg).fontSize(8.5).fillColor(COLORS.body);
+  doc.font(FONT.reg).fontSize(9.5).fillColor(COLORS.body);
   for (let i = 0; i < lines.length; i++) {
     const label = `${i + 1}.`;
     doc.text(label, tx, ty, { width: 14, lineBreak: false });
@@ -380,7 +434,7 @@ function howToUse(ctx: Ctx, lines: string[]): void {
     ty += bodyLineH;
   }
 
-  doc.y = top + boxH + 14;
+  doc.y = top + boxH + 7;
 }
 
 /* ------------------------------------------------------------------ */
@@ -398,16 +452,16 @@ function metaCell(
   const { doc } = ctx;
   doc
     .font(FONT.bold)
-    .fontSize(7.5)
+    .fontSize(8)
     .fillColor(COLORS.muted)
     .text(label.toUpperCase(), x, y, { width: w, characterSpacing: 0.6 });
-  const vy = y + 11;
+  const vy = y + 12;
   doc
     .font(FONT.bold)
-    .fontSize(10.5)
+    .fontSize(11.5)
     .fillColor(COLORS.ink)
     .text(value || " ", x, vy, { width: w, lineBreak: false });
-  hairline(ctx, x, vy + 15, w - 12);
+  hairline(ctx, x, vy + 16, w - 12);
 }
 
 function metaGrid(
@@ -416,7 +470,7 @@ function metaGrid(
 ): void {
   const { doc } = ctx;
   const colW = ctx.contentW / 2;
-  const rowH = 40;
+  const rowH = 36;
   ensureSpace(ctx, rowH * rows.length + 8);
   let y = doc.y;
   for (const [l1, v1, l2, v2] of rows) {
@@ -424,7 +478,7 @@ function metaGrid(
     metaCell(ctx, l2, v2, ctx.left + colW, y, colW);
     y += rowH;
   }
-  doc.y = y + 6;
+  doc.y = y + 2;
 }
 
 /* ------------------------------------------------------------------ */
@@ -434,15 +488,15 @@ function metaGrid(
 function sectionHeader(ctx: Ctx, text: string): void {
   const { doc } = ctx;
   ensureSpace(ctx, 26);
-  doc.y += 6;
+  doc.y += 4;
   doc
     .font(FONT.bold)
-    .fontSize(11)
+    .fontSize(12)
     .fillColor(COLORS.ink)
     .text(text.toUpperCase(), ctx.left, doc.y, { width: ctx.contentW });
   const y = doc.y + 3;
   hairline(ctx, ctx.left, y, ctx.contentW);
-  doc.y = y + 6;
+  doc.y = y + 5;
 }
 
 function sectionCaption(ctx: Ctx, text: string): void {
@@ -450,7 +504,7 @@ function sectionCaption(ctx: Ctx, text: string): void {
   const { doc } = ctx;
   doc
     .font(FONT.obl)
-    .fontSize(8.5)
+    .fontSize(9)
     .fillColor(COLORS.muted)
     .text(text, ctx.left, doc.y, { width: ctx.contentW });
   doc.y += 4;
@@ -467,7 +521,7 @@ function textLines(
 ): void {
   const { doc } = ctx;
   const size = opts.size ?? 9;
-  const padY = 5;
+  const padY = 2;
   const numW = opts.numbered ? 18 : 0;
   for (let i = 0; i < items.length; i++) {
     const text = items[i];
@@ -531,9 +585,9 @@ interface TableRow {
 
 function drawTable(ctx: Ctx, cols: Column[], rows: TableRow[]): void {
   const { doc } = ctx;
-  const pad = 7;
+  const pad = 4;
   const headerH = 20;
-  const minRowH = 22;
+  const minRowH = 21;
 
   // total width normalization: last column absorbs remainder
   const fixed = cols.slice(0, -1).reduce((s, c) => s + c.width, 0);
@@ -556,7 +610,7 @@ function drawTable(ctx: Ctx, cols: Column[], rows: TableRow[]): void {
     for (let i = 0; i < cols.length; i++) {
       doc
         .font(FONT.bold)
-        .fontSize(7.5)
+        .fontSize(8)
         .fillColor(COLORS.muted)
         .text(cols[i].header.toUpperCase(), cx + pad, top + 6, {
           width: widths[i] - pad * 2,
@@ -614,8 +668,15 @@ function drawTableBorder(
     .lineWidth(1)
     .strokeColor(COLORS.rule)
     .roundedRect(ctx.left, top, ctx.contentW, bottom - top, 4)
-    .stroke()
-    .restore();
+    .stroke();
+  // Vertical column separators (full grid, like the reference).
+  doc.lineWidth(0.75);
+  let cx = ctx.left;
+  for (let i = 0; i < widths.length - 1; i++) {
+    cx += widths[i];
+    doc.moveTo(cx, top).lineTo(cx, bottom).stroke();
+  }
+  doc.restore();
 }
 
 /* ------------------------------------------------------------------ */
@@ -632,29 +693,42 @@ function worklogStatusPill(
   const { doc } = ctx;
   let bg: string = COLORS.doneBg;
   let fg: string = COLORS.doneGreen;
-  let label = "✓ Completed";
+  let label = "Completed";
+  let icon: "check" | "dot" | "x" = "check";
   if (status === "Partial") {
     bg = "#fff7ed";
     fg = COLORS.medium;
-    label = "◐ Partial";
+    label = "Partial";
+    icon = "dot";
   } else if (status === "Not Done") {
     bg = "#fef2f2";
     fg = COLORS.red;
-    label = "✗ Not Done";
+    label = "Not Done";
+    icon = "x";
   }
-  doc.font(FONT.bold).fontSize(8.5);
+  doc.font(FONT.bold).fontSize(9);
+  const iconW = 11;
   const tw = doc.widthOfString(label);
-  const pillW = Math.min(tw + 14, maxW);
+  const pillW = Math.min(tw + iconW + 14, maxW);
   const pillH = 16;
-  doc
-    .save()
-    .fillColor(bg)
-    .roundedRect(x, y, pillW, pillH, 8)
-    .fill()
-    .restore();
+  doc.save().fillColor(bg).roundedRect(x, y, pillW, pillH, 8).fill().restore();
+
+  // Vector status icon (Helvetica has no ✓/✗/◐ glyphs, so draw them).
+  const ix = x + 9;
+  const iy = y + pillH / 2;
+  doc.save();
+  if (icon === "check") {
+    doc.lineWidth(1.4).strokeColor(fg).moveTo(ix - 2.5, iy).lineTo(ix - 0.3, iy + 2.3).lineTo(ix + 3, iy - 2.6).stroke();
+  } else if (icon === "x") {
+    doc.lineWidth(1.4).strokeColor(fg).moveTo(ix - 2, iy - 2).lineTo(ix + 2.5, iy + 2.5).moveTo(ix + 2.5, iy - 2).lineTo(ix - 2, iy + 2.5).stroke();
+  } else {
+    doc.fillColor(fg).circle(ix, iy, 2.6).fill();
+  }
+  doc.restore();
+
   doc
     .fillColor(fg)
-    .text(label, x, y + 4, { width: pillW, align: "center", lineBreak: false });
+    .text(label, x + iconW + 4, y + 4, { width: pillW - iconW - 6, align: "left", lineBreak: false });
 }
 
 /* ------------------------------------------------------------------ */
@@ -663,48 +737,53 @@ function worklogStatusPill(
 
 function legendRow(ctx: Ctx): void {
   const { doc } = ctx;
-  ensureSpace(ctx, 22);
-  const y = doc.y + 4;
-  let x = ctx.left;
-  const gap = 14;
-  const size = 8;
+  const size = 9;
 
-  const drawDot = (color: string): number => {
-    doc.save().fillColor(color).circle(x + 3, y + 5, 3).fill().restore();
-    return 9;
-  };
-  const drawSquare = (color: string): number => {
-    doc.save().fillColor(color).rect(x, y + 2, 6, 6).fill().restore();
-    return 9;
-  };
-  const label = (t: string) => {
+  // Icon + "Label — description", laid out in two columns (matches the
+  // reference checklist legend). Icons mirror the STATUS column glyphs.
+  const entries: Array<{
+    icon: "checkbox" | "check" | "dot" | "square";
+    color?: string;
+    label: string;
+    desc: string;
+  }> = [
+    { icon: "checkbox", label: "Not Started", desc: "not begun yet" },
+    { icon: "dot", color: COLORS.amber, label: "In Progress", desc: "being worked on" },
+    { icon: "check", label: "Completed", desc: "finished and working" },
+    { icon: "square", color: COLORS.low, label: "On Hold", desc: "paused for now" },
+    { icon: "dot", color: COLORS.red, label: "Cancelled", desc: "no longer needed" },
+  ];
+
+  const rowH = 13;
+  const rows = Math.ceil(entries.length / 2);
+  ensureSpace(ctx, rows * rowH + 8);
+  const colW = ctx.contentW / 2;
+  const startY = doc.y + 4;
+
+  entries.forEach((e, i) => {
+    const x = ctx.left + (i % 2) * colW;
+    const y = startY + Math.floor(i / 2) * rowH;
+    if (e.icon === "checkbox") drawCheckbox(doc, x, y, 9);
+    else if (e.icon === "check") drawCheckbox(doc, x, y, 9, true);
+    else if (e.icon === "dot")
+      doc.save().fillColor(e.color!).circle(x + 4, y + 5, 3).fill().restore();
+    else doc.save().fillColor(e.color!).rect(x, y + 2, 7, 7).fill().restore();
+
+    const tx = x + 14;
     doc
       .font(FONT.reg)
       .fontSize(size)
-      .fillColor(COLORS.body)
-      .text(t, x, y + 1, { lineBreak: false });
-    x += doc.widthOfString(t) + gap;
-  };
+      .fillColor(COLORS.ink)
+      .text(e.label, tx, y + 1, { lineBreak: false });
+    const lw = doc.widthOfString(e.label);
+    doc
+      .font(FONT.reg)
+      .fontSize(size)
+      .fillColor(COLORS.muted)
+      .text(` — ${e.desc}`, tx + lw, y + 1, { lineBreak: false });
+  });
 
-  // ☐ Not Started
-  drawCheckbox(doc, x, y, 9);
-  x += 12;
-  label("Not Started");
-  // ● In Progress (amber)
-  x += drawDot(COLORS.amber);
-  label("In Progress");
-  // ✓ Completed (green check in box)
-  drawCheckbox(doc, x, y, 9, true);
-  x += 12;
-  label("Completed");
-  // ■ On Hold (blue square)
-  x += drawSquare(COLORS.low);
-  label("On Hold");
-  // ● Cancelled (red dot)
-  x += drawDot(COLORS.red);
-  label("Cancelled");
-
-  doc.y = y + 14;
+  doc.y = startY + rows * rowH + 6;
 }
 
 /* ------------------------------------------------------------------ */
@@ -848,10 +927,10 @@ function fileStem(p: string): string {
 /* ------------------------------------------------------------------ */
 
 const CHECKLIST_HOWTO = [
-  "List every planned task with its priority and current status.",
-  "Use the STATUS checkbox column to track progress; see the legend below the table.",
-  "GOALS describe outcomes that should be true when finished — not tasks.",
-  "EXPECTED DELIVERABLES are the concrete finished things you will hand over.",
+  "Write the project name, your name, the date, and the sprint or version at the top.",
+  "List every task you plan to do. Give each one a priority: High, Medium, or Low.",
+  "Leave the Status column blank for now. Update it as you work.",
+  "Write down what you want to achieve (Goals) and what you will hand over (Deliverables).",
 ];
 
 export async function renderChecklistPDF(
@@ -871,6 +950,7 @@ export async function renderChecklistPDF(
     autoFirstPage: true,
     bufferPages: false,
   });
+  registerFonts(doc);
 
   const stem = fileStem(outPath);
   const subtitle = blank ? "" : data.subtitle || "";
@@ -893,9 +973,9 @@ export async function renderChecklistPDF(
   sectionCaption(ctx, "Everything scoped for this cycle, by priority.");
 
   const cols: Column[] = [
-    { header: "Status", width: 46 },
-    { header: "Priority", width: 62 },
-    { header: "Task", width: 150 },
+    { header: "Status", width: 48 },
+    { header: "Priority", width: 54 },
+    { header: "Task", width: 208 },
     { header: "Notes", width: 0 },
   ];
 
@@ -908,8 +988,8 @@ export async function renderChecklistPDF(
   const rows: TableRow[] = tasks.map((t) => ({
     measure: (c, col, w) => {
       if (col === 3 && t && t.notes) return measureRichText(c, t.notes, w, 8.5);
-      if (col === 2 && t) return measureRichText(c, t.task, w, 9, FONT.bold);
-      return 12;
+      if (col === 2 && t) return measureRichText(c, t.task, w, 8.5, FONT.bold);
+      return 11;
     },
     render: (c, col, x, y, w) => {
       const { doc: d } = c;
@@ -919,14 +999,14 @@ export async function renderChecklistPDF(
       } else if (col === 1) {
         if (t) {
           d.font(FONT.bold)
-            .fontSize(9)
+            .fontSize(8.5)
             .fillColor(priorityColor(t.priority))
             .text(t.priority, x, y + 1, { width: w, lineBreak: false });
         }
       } else if (col === 2) {
         if (t) {
           d.font(FONT.bold)
-            .fontSize(9)
+            .fontSize(8.5)
             .fillColor(COLORS.ink)
             .text(t.task, x, y + 1, { width: w });
         }
@@ -943,16 +1023,16 @@ export async function renderChecklistPDF(
 
   // GOALS
   sectionHeader(ctx, "Goals");
-  sectionCaption(ctx, "What should be true by the end? Outcomes, not tasks.");
+  sectionCaption(ctx, "What should be true by the end of this session? Outcomes, not tasks.");
   if (blank || !data.goals || data.goals.length === 0) blankLines(ctx, 3);
-  else textLines(ctx, data.goals, { size: 9 });
+  else textLines(ctx, data.goals, { size: 9.5 });
 
   // DELIVERABLES
   sectionHeader(ctx, "Expected Deliverables");
-  sectionCaption(ctx, "The finished things to hand over.");
+  sectionCaption(ctx, "The finished things handed over — working pages, a fixed bug, green checks.");
   if (blank || !data.deliverables || data.deliverables.length === 0)
     blankLines(ctx, 3);
-  else textLines(ctx, data.deliverables, { size: 9 });
+  else textLines(ctx, data.deliverables, { size: 9.5 });
 
   return finalize(doc, outPath);
 }
@@ -962,10 +1042,10 @@ export async function renderChecklistPDF(
 /* ------------------------------------------------------------------ */
 
 const WORKLOG_HOWTO = [
-  "Mark each planned checklist task Completed, Partial, or Not Done with its result.",
-  "Log additional work, blockers, and the next priorities to pick up.",
-  "The summary and time-spent grids capture the shape of the day — estimates are fine.",
-  "Tick one overall status so anyone can see if the work is on track.",
+  "Open your Development Checklist and copy each planned task into the first table.",
+  "Mark what got done, what was only partly done, and what was not done.",
+  "Add any extra work you did that was not on the original plan.",
+  "Record anything that is blocking you, then list what you will do next.",
 ];
 
 function fmtHours(v?: number): string {
@@ -990,6 +1070,7 @@ export async function renderWorklogPDF(
     autoFirstPage: true,
     bufferPages: false,
   });
+  registerFonts(doc);
 
   const stem = fileStem(outPath);
   const subtitle = blank ? "" : data.subtitle || "";
@@ -1031,16 +1112,16 @@ export async function renderWorklogPDF(
 
   const cRows: TableRow[] = items.map((it) => ({
     measure: (c, col, w) => {
-      if (col === 0 && it) return measureRichText(c, it.task, w, 9, FONT.bold);
+      if (col === 0 && it) return measureRichText(c, it.task, w, 8.5, FONT.bold);
       if (col === 2 && it && it.result) return measureRichText(c, it.result, w, 8.5);
-      return 12;
+      return 11;
     },
     render: (c, col, x, y, w) => {
       const { doc: d } = c;
       if (col === 0) {
         if (it)
           d.font(FONT.bold)
-            .fontSize(9)
+            .fontSize(8.5)
             .fillColor(COLORS.ink)
             .text(it.task, x, y + 1, { width: w });
       } else if (col === 1) {
@@ -1062,12 +1143,19 @@ export async function renderWorklogPDF(
 
   drawTable(ctx, cCols, cRows);
 
-  // 2. ADDITIONAL TASKS COMPLETED
+  // 2. ADDITIONAL TASKS COMPLETED — a lined list (matches the reference), each
+  // item "task — result" on its own row with a hairline under it.
   sectionHeader(ctx, "2. Additional Tasks Completed");
-  sectionCaption(ctx, "Work done beyond the planned checklist.");
-  if (blank || !data.additional || data.additional.length === 0)
+  sectionCaption(ctx, "Useful work done that was not on the original checklist. This work still counts.");
+  if (blank || !data.additional || data.additional.length === 0) {
     blankLines(ctx, 3);
-  else textLines(ctx, data.additional, { size: 8.5 });
+  } else {
+    textLines(
+      ctx,
+      data.additional.map((a) => (a.result ? `${a.task} — ${a.result}` : a.task)),
+      { size: 9.5 }
+    );
+  }
 
   // 3. SUMMARY OF WORK COMPLETED
   sectionHeader(ctx, "3. Summary of Work Completed");
@@ -1092,10 +1180,10 @@ export async function renderWorklogPDF(
       {
         big: String(completed),
         small: `/ ${total}`,
-        label: "Gap Tasks Completed",
+        label: "Planned Tasks Completed",
       },
-      { big: String(partial), label: "Partially Done" },
-      { big: String(additionalN), label: `Additional (${additionalN})` },
+      { big: String(partial), label: "Planned Tasks Partially Done" },
+      { big: String(additionalN), label: "Additional Tasks Completed" },
       { big: `${pct}%`, label: "Overall Progress" },
     ]);
   }
@@ -1107,14 +1195,14 @@ export async function renderWorklogPDF(
   } else if (!data.notCompleted || data.notCompleted.length === 0) {
     doc
       .font(FONT.obl)
-      .fontSize(8.5)
+      .fontSize(9)
       .fillColor(COLORS.faint)
       .text("Nothing outstanding — all planned work was addressed.", ctx.left, doc.y + 4, {
         width: ctx.contentW,
       });
     doc.y += 6;
   } else {
-    textLines(ctx, data.notCompleted, { size: 8.5 });
+    textLines(ctx, data.notCompleted, { size: 9.5 });
   }
 
   // 5 / 6 two-column block: BLOCKERS | NEXT PRIORITIES
@@ -1125,7 +1213,7 @@ export async function renderWorklogPDF(
   sectionCaption(ctx, "Roughly how the day went. Estimates are fine.");
   const t = data.time || {};
   timeGrid(ctx, [
-    ["Planning / Audit", blank ? "" : fmtHours(t.planning)],
+    ["Planning", blank ? "" : fmtHours(t.planning)],
     ["Development", blank ? "" : fmtHours(t.development)],
     ["Testing", blank ? "" : fmtHours(t.testing)],
     ["Bug Fixes", blank ? "" : fmtHours(t.bugFixes)],
@@ -1141,7 +1229,7 @@ export async function renderWorklogPDF(
   // 9. NOTES
   sectionHeader(ctx, "9. Notes");
   if (blank || !data.notes || data.notes.length === 0) blankLines(ctx, 3);
-  else textLines(ctx, data.notes, { size: 9 });
+  else textLines(ctx, data.notes, { size: 9.5 });
 
   return finalize(doc, outPath);
 }
@@ -1157,9 +1245,13 @@ function twoColumnBlock(ctx: Ctx, data: Worklog, blank: boolean): void {
   const leftX = ctx.left;
   const rightX = ctx.left + colW + gutter;
 
-  // We render two independent columns sharing a starting y, using a temporary
-  // sub-context whose left/right/contentW map to each column.
-  ensureSpace(ctx, 80);
+  // We render two independent columns sharing a starting y. Reserve the whole
+  // block's height up front so neither column page-breaks mid-render (which
+  // would desync the two columns onto different pages).
+  const linesL = blank || !data.blockers?.length ? 3 : data.blockers.length;
+  const linesR = blank || !data.next?.length ? 3 : data.next.length;
+  const needed = 26 + 13 + Math.max(linesL, linesR) * 22 + 12;
+  ensureSpace(ctx, needed);
   const startY = doc.y;
 
   const renderColumn = (
@@ -1179,7 +1271,7 @@ function twoColumnBlock(ctx: Ctx, data: Worklog, blank: boolean): void {
     sectionHeader(sub, header);
     sectionCaption(sub, caption);
     if (blank || !items || items.length === 0) blankLines(sub, 3);
-    else textLines(sub, items, { size: 8.5, numbered });
+    else textLines(sub, items, { size: 9.5, numbered });
     return sub.doc.y;
   };
 

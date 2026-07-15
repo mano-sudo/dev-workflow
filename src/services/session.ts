@@ -80,6 +80,18 @@ export function todaysActivities(): ActivityEntry[] {
 }
 
 /**
+ * Entries for a specific ISO date "YYYY-MM-DD" (used to regenerate a past day).
+ * Reads both the live session and the completed-day archive, since a rolled-over
+ * day's entries live in completed.json.
+ */
+export function activitiesForDate(iso: string): ActivityEntry[] {
+  const t = today();
+  const live = readSession().filter((e) => (e.date || t) === iso);
+  const archived = readJsonArray(getCompletedPath()).filter((e) => (e.date || "") === iso);
+  return [...archived, ...live];
+}
+
+/**
  * If the live session contains entries from a previous day, archive all of them
  * to completed.json and clear the live session. No-op when everything is from
  * today (or the session is empty).

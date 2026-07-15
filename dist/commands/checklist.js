@@ -491,6 +491,21 @@ async function run(args) {
         .filter(Boolean);
     goals.push(...splitList(flags.goals));
     deliverables.push(...splitList(flags.deliverables));
+    // Non-interactive task entry, one task PER LINE:
+    //   --tasks "Text :: Priority :: notes\nText2 :: Low :: more notes"
+    // Split on newlines only (NOT ; or |) so semicolons inside notes are safe;
+    // `::` separates the fields within each task. Priority and notes are optional.
+    for (const raw of (flags.tasks || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean)) {
+        const [text, prio, notes] = raw.split(" :: ").map((s) => s.trim());
+        if (!text)
+            continue;
+        tasks.push({
+            status: "Not Started",
+            priority: normalizePriority(prio || "Medium"),
+            task: text,
+            notes: notes || undefined,
+        });
+    }
     if (tasks.length === 0) {
         console.warn("No tasks were collected from the selected source(s). Writing an empty checklist.");
     }
@@ -499,7 +514,8 @@ async function run(args) {
         developer,
         date: humanDate(date),
         sprint,
-        subtitle: flags.subtitle || `Planned work for ${project}`,
+        subtitle: flags.subtitle ||
+            "Filled in before the work session — the plan for today's tasks.",
         tasks,
         goals,
         deliverables,

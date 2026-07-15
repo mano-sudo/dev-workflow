@@ -30,13 +30,16 @@ function todayISO() {
  * Record an activity of `type` with a human `description` and optional
  * structured `meta`. Timestamped "HH:MM" / today's date. Never throws.
  */
-function track(type, description, meta) {
+function track(type, description, meta, result) {
     const entry = {
         time: nowHM(),
         type,
         description,
         date: todayISO(),
     };
+    if (result && result.trim()) {
+        entry.result = result.trim();
+    }
     if (meta && Object.keys(meta).length > 0) {
         entry.meta = meta;
     }

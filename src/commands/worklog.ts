@@ -39,7 +39,7 @@ import {
   toHTML,
 } from "../services/templateEngine";
 import { getGitContext } from "../services/git";
-import { todaysActivities } from "../services/session";
+import { activitiesForDate, todaysActivities } from "../services/session";
 
 interface ParsedArgs {
   flags: Record<string, string>;
@@ -110,9 +110,17 @@ function fileStem(developer: string, date: Date): string {
   return `${slug(last)}_WORKLOG_${mm}-${dd}-${yyyy}`;
 }
 
-/** Rough time buckets derived from activity types (hours). */
+/** Cap the reported day at a standard workday — elapsed span includes breaks. */
+const MAX_WORKDAY_HOURS = 8;
+
+/**
+ * Estimate time buckets from the day's activity. The TOTAL is the real elapsed
+ * span between the first and last tracked activity (clamped to a sane workday),
+ * NOT the sum of a fixed per-activity estimate — a hundred small commits must
+ * not add up to a 70-hour day. That span is then split across the buckets in
+ * proportion to how many activities fell in each.
+ */
 function timeFromActivities(entries: ActivityEntry[]): TimeAllocation {
-  // Estimate ~0.5h per tracked activity, bucketed by type.
   const t: Required<TimeAllocation> = {
     planning: 0,
     development: 0,
@@ -121,54 +129,82 @@ function timeFromActivities(entries: ActivityEntry[]): TimeAllocation {
     meetings: 0,
     total: 0,
   };
+  if (entries.length === 0) return t;
+
+  // Distribute across meaningful work types only — a day of many tiny commits
+  // and file-edits shouldn't drown out bug-fix/testing time.
+  const counts = { planning: 0, development: 0, testing: 0, bugFixes: 0, meetings: 0 };
   for (const e of entries) {
-    const unit = 0.5;
     switch (e.type) {
       case "test":
-        t.testing += unit;
+        counts.testing += 1;
         break;
       case "bugfix":
-        t.bugFixes += unit;
+        counts.bugFixes += 1;
         break;
       case "note":
-        t.planning += unit;
+        counts.planning += 1;
         break;
       case "feature":
       case "refactor":
-      case "build":
-      case "commit":
-      case "command":
-      case "package":
-      case "migration":
-      case "file-created":
-      case "file-edited":
-      case "file-deleted":
+        counts.development += 1;
+        break;
       default:
-        t.development += unit;
+        // commits, file edits, commands, builds, etc. — process noise, not a
+        // work category; ignored for the time split.
         break;
     }
   }
-  t.total =
-    t.planning + t.development + t.testing + t.bugFixes + t.meetings;
+
+  const toMin = (hm: string): number => {
+    const [h, m] = (hm || "").split(":").map((n) => parseInt(n, 10));
+    return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+  };
+  const mins = entries.map((e) => toMin(e.time)).filter((n) => !Number.isNaN(n)).sort((a, b) => a - b);
+  const spanH = mins.length >= 2 ? (mins[mins.length - 1] - mins[0]) / 60 : 1;
+  const hours = Math.max(0.5, Math.min(spanH, MAX_WORKDAY_HOURS));
+
+  const totalCount =
+    counts.planning + counts.development + counts.testing + counts.bugFixes + counts.meetings || 1;
+  const round = (x: number): number => Math.round(x * 2) / 2;
+  t.planning = round((hours * counts.planning) / totalCount);
+  t.development = round((hours * counts.development) / totalCount);
+  t.testing = round((hours * counts.testing) / totalCount);
+  t.bugFixes = round((hours * counts.bugFixes) / totalCount);
+  t.meetings = round((hours * counts.meetings) / totalCount);
+  t.total = round(t.planning + t.development + t.testing + t.bugFixes + t.meetings);
   return t;
 }
 
 /** Build worklog content from the tracked session + git context. */
-async function buildFromSession(cwd: string): Promise<Partial<Worklog>> {
-  const entries = await todaysActivities();
+async function buildFromSession(cwd: string, dateISO?: string): Promise<Partial<Worklog>> {
+  const raw = dateISO ? activitiesForDate(dateISO) : todaysActivities();
+
+  // Dedup (the completed-day archive can hold the same entry more than once)
+  // and drop malformed/typeless rows before bucketing.
+  const seen = new Set<string>();
+  const entries = raw.filter((e) => {
+    if (!e.type || !e.description || !e.description.trim()) return false;
+    const key = `${e.time}|${e.type}|${e.description}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
   const checklistItems: WorklogChecklistItem[] = [];
-  const additional: string[] = [];
+  const additional: WorklogChecklistItem[] = [];
+
+  // Low-signal event types that would just be noise as task rows.
+  const NOISE = new Set(["commit", "file-created", "file-edited", "file-deleted", "command", "build"]);
 
   for (const e of entries) {
     if (e.type === "feature" || e.type === "bugfix" || e.type === "refactor") {
-      checklistItems.push({
-        task: e.description,
-        status: "Completed",
-        result: `${e.type} at ${e.time}`,
-      });
-    } else {
-      additional.push(`${e.time} — ${e.description}`);
+      // The Result column shows the real outcome when captured (`track … :: result`),
+      // falling back to the activity type — never the opaque "type at time".
+      checklistItems.push({ task: e.description, status: "Completed", result: e.result || e.type });
+    } else if (!NOISE.has(e.type)) {
+      // Additional items only show a real captured result (no type fallback).
+      additional.push({ task: e.description, status: "Completed", result: e.result });
     }
   }
 
@@ -176,11 +212,6 @@ async function buildFromSession(cwd: string): Promise<Partial<Worklog>> {
   const next: string[] = [];
   try {
     const git = await getGitContext(cwd);
-    if (git.recentCommits && git.recentCommits.length) {
-      for (const c of git.recentCommits.slice(0, 10)) {
-        additional.push(`Commit ${c.hash.slice(0, 7)}: ${c.subject}`);
-      }
-    }
     if (git.changedFiles && git.changedFiles.length) {
       next.push(
         `Finish/commit ${git.changedFiles.length} pending change(s) in progress`
@@ -225,7 +256,7 @@ function expandHome(p: string): string {
 function signalText(auto: Partial<Worklog>): string {
   const parts: string[] = [];
   for (const c of auto.checklistItems ?? []) parts.push(c.task, c.result ?? "");
-  for (const a of auto.additional ?? []) parts.push(a);
+  for (const a of auto.additional ?? []) parts.push(a.task, a.result ?? "");
   return parts.join(" \n ").toLowerCase();
 }
 
@@ -323,7 +354,7 @@ async function enrichWorklogInteractive(
 
   const additional = [
     ...(auto.additional ?? []),
-    ...(await collectList(rl, "Additional work done (beyond the plan)")),
+    ...(await collectChecklistItems(rl, "Additional work done (beyond the plan)")),
   ];
   const notCompleted = await collectList(rl, "Tasks NOT completed");
   const blockers = await collectList(rl, "Blockers");
@@ -367,9 +398,10 @@ async function exportWorklog(
   format: ExportFormat,
   cfg: DevWorkflowConfig,
   blank: boolean,
-  noClobber = false
+  noClobber = false,
+  dateObj: Date = new Date()
 ): Promise<string[]> {
-  const stem = fileStem(worklog.developer || "developer", new Date());
+  const stem = fileStem(worklog.developer || "developer", dateObj);
   const written: string[] = [];
 
   if (format === "pdf") {
@@ -444,7 +476,9 @@ export async function run(args: string[]): Promise<void> {
     developer,
     date: humanDate(date),
     sprint,
-    subtitle: flags.subtitle || `Daily worklog for ${project}`,
+    subtitle:
+      flags.subtitle ||
+      "Filled in at the end of the session — the full record of what actually happened.",
     checklistItems: [],
     checklistRef: flags.checklistRef,
     additional: [],
@@ -472,9 +506,12 @@ export async function run(args: string[]): Promise<void> {
     return;
   }
 
-  // Always auto-generate from what was actually completed today (tracked
-  // activity + git commits). This is the baseline the worklog is built on.
-  let content = await buildFromSession(cwd);
+  // Always auto-generate from what was actually completed on the target day
+  // (tracked activity + git commits). --date regenerates a past day.
+  const targetISO = flags.date
+    ? new Date(flags.date).toISOString().slice(0, 10)
+    : undefined;
+  let content = await buildFromSession(cwd, targetISO);
 
   const autoOnly = bools.has("auto") || bools.has("yes");
   const interactive = !autoOnly && hasTTY();
@@ -504,12 +541,21 @@ export async function run(args: string[]): Promise<void> {
           const signal = signalText(content);
           const planned = new Set(loaded.tasks.map((t) => t.task.toLowerCase()));
           // Tracked-completed work that isn't a planned task becomes "additional".
-          const extra = (content.checklistItems ?? [])
-            .filter((c) => !planned.has(c.task.toLowerCase()))
-            .map((c) => (c.result ? `${c.task} — ${c.result}` : c.task));
-          content.checklistItems = rl
-            ? await reconcileInteractive(rl, loaded.tasks, signal)
-            : reconcileAuto(loaded.tasks, signal);
+          const extra = (content.checklistItems ?? []).filter(
+            (c) => !planned.has(c.task.toLowerCase())
+          );
+          // --not-done: mark every planned task Not Done (skip the guess).
+          // Use when the checklist is planned work that hasn't been executed
+          // yet, so the completion table reflects reality, not word overlap.
+          const assumeNotDone = bools.has("not-done");
+          content.checklistItems = assumeNotDone
+            ? loaded.tasks.map((t) => ({
+                task: t.task,
+                status: "Not Done" as WorklogTaskStatus,
+              }))
+            : rl
+              ? await reconcileInteractive(rl, loaded.tasks, signal)
+              : reconcileAuto(loaded.tasks, signal);
           content.additional = [...(content.additional ?? []), ...extra];
           content.checklistRef = loaded.stem;
           const done = content.checklistItems.filter((c) => c.status === "Completed").length;
@@ -533,7 +579,7 @@ export async function run(args: string[]): Promise<void> {
   }
 
   const worklog: Worklog = { ...base, ...content };
-  const written = await exportWorklog(worklog, outDir, format, cfg, false, noClobber);
+  const written = await exportWorklog(worklog, outDir, format, cfg, false, noClobber, date);
   recordCompleted(written, { project });
   console.log(
     `Worklog generated (${worklog.checklistItems.length} completed item(s)):\n  ${written.join(
