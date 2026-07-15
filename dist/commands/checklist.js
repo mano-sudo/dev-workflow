@@ -492,15 +492,20 @@ async function run(args) {
     goals.push(...splitList(flags.goals));
     deliverables.push(...splitList(flags.deliverables));
     // Non-interactive task entry, one task PER LINE:
-    //   --tasks "Text :: Priority :: notes\nText2 :: Low :: more notes"
+    //   --tasks "Text :: Priority :: notes :: Status\nText2 :: Low :: more notes"
     // Split on newlines only (NOT ; or |) so semicolons inside notes are safe;
-    // `::` separates the fields within each task. Priority and notes are optional.
+    // `::` separates the fields. Priority, notes, and status are all optional.
+    const STATUSES = ["Not Started", "In Progress", "Completed", "On Hold", "Cancelled"];
+    const normalizeStatus = (s) => {
+        const m = STATUSES.find((v) => v.toLowerCase() === (s || "").trim().toLowerCase());
+        return m || "Not Started";
+    };
     for (const raw of (flags.tasks || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean)) {
-        const [text, prio, notes] = raw.split(" :: ").map((s) => s.trim());
+        const [text, prio, notes, status] = raw.split(" :: ").map((s) => s.trim());
         if (!text)
             continue;
         tasks.push({
-            status: "Not Started",
+            status: normalizeStatus(status),
             priority: normalizePriority(prio || "Medium"),
             task: text,
             notes: notes || undefined,
