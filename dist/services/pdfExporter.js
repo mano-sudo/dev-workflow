@@ -664,7 +664,7 @@ function statRow(ctx, stats) {
     for (let i = 0; i < stats.length; i++) {
         const s = stats[i];
         const x = ctx.left + i * cellW;
-        doc.font(FONT.bold).fontSize(26).fillColor(COLORS.ink);
+        doc.font(FONT.bold).fontSize(24).fillColor(COLORS.ink);
         doc.text(s.big || " ", x, top, { width: cellW, lineBreak: false });
         if (s.small) {
             const bw = doc.widthOfString(s.big || " ");
@@ -672,7 +672,7 @@ function statRow(ctx, stats) {
                 .font(FONT.bold)
                 .fontSize(13)
                 .fillColor(COLORS.faint)
-                .text(" " + s.small, x + bw, top + 12, { lineBreak: false });
+                .text(" " + s.small, x + bw, top + 11, { lineBreak: false });
         }
         hairline(ctx, x, top + 34, cellW - 12);
         doc
